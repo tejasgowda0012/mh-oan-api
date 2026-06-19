@@ -9,6 +9,7 @@ class FarmerContext(BaseModel):
     Args:
         query (str): The user's question.
         lang_code (str): The language code of the user's question.
+        session_id (str): Conversation session id (for Bharat Vistaar cross-network).
         moderation_str (Optional[str]): The moderation result of the user's question.
 
 
@@ -19,6 +20,7 @@ class FarmerContext(BaseModel):
     """
     query: str = Field(description="The user's question.")
     lang_code: str = Field(description="The language code of the user's question.", default='mr')
+    session_id: str = Field(default="", description="Conversation session id.")
     moderation_str: Optional[str] = Field(default=None, description="The moderation result of the user's question.")
     farmer_id: Optional[str] = Field(default=None, description="The farmer ID of the user.")
 
