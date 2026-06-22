@@ -54,7 +54,7 @@ async def create_suggestions(
 
         message_pairs = "\n\n".join(format_message_pairs(history, 5))
         target_lang_name = Language.get(target_lang).display_name(target_lang)
-        message = f"**Conversation**\n\n{message_pairs}\n\n**Based on the conversation, suggest 3-5 questions the farmer can ask in {target_lang_name}.**"
+        message = f"**Conversation**\n\n{message_pairs}\n\n**Based on the conversation, suggest 1 questions the farmer can ask in {target_lang_name}.**"
 
         lf_env = os.getenv("LANGFUSE_TRACING_ENVIRONMENT", "development")
         trace_tags = [
