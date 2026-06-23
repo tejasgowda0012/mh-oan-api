@@ -85,7 +85,7 @@ async def create_suggestions(
                 lf_set_trace_io(input=message if len(message) <= 2000 else f"{message[:1997]}...")
                 deps = FarmerContext(query=message, lang_code=target_lang)
                 agent_run = await suggestions_agent.run(message, deps=deps)
-                suggestions = [x for x in agent_run.output]
+                suggestions = [agent_run.output] if agent_run.output else []
                 lf_set_trace_io(output=suggestions)
 
         logger.info(f"Suggestions: {suggestions}")
