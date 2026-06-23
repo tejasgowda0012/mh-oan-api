@@ -282,6 +282,7 @@ async def agri_services(latitude: float, longitude: float, category_code: Litera
             longitude=longitude,
             category_code=category_code,
         ).get_payload()
+        logger.info("Beckn [advisory:mh-vistaar/agri-services] request payload: %s", json.dumps(payload, ensure_ascii=False))
         bap_endpoint = os.getenv("BAP_ENDPOINT")
         if not bap_endpoint:
             logger.error("BAP_ENDPOINT environment variable not set")

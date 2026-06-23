@@ -33,10 +33,12 @@ _cached_auth_token_expires_at: float = 0.0
 
 # Central schemes for which Bharat Vistaar supports live status / grievance (not scheme info).
 # MahaVistaar serves scheme *information* for all 103 schemes locally via get_scheme_info.
-BHARAT_VISTAAR_OPERATIONAL_SCHEMES = frozenset({
-    "kcc", "pmkisan", "pmfby", "shc", "pmksy", "sathi", "pmasha",
-    "aif", "smam", "pdmc", "nfsm", "rad",
-})
+# Source of truth: assets/scheme_list.json (type == "bharat_vistaar")
+with open("assets/scheme_list.json", "r", encoding="utf-8") as _f:
+    _scheme_list = json.load(_f)
+BHARAT_VISTAAR_OPERATIONAL_SCHEMES = frozenset(
+    s["scheme_code"] for s in _scheme_list if s.get("type") == "bharat_vistaar"
+)
 
 
 def _require_env(name: str) -> str:

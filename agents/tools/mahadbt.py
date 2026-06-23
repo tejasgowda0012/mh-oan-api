@@ -4,6 +4,7 @@ MahaDBT Scheme status
 
 """
 
+import json
 import os
 import uuid
 from datetime import datetime
@@ -498,7 +499,8 @@ async def get_scheme_status(ctx: RunContext[FarmerContext]) -> str:
 
     try:
         payload = MahaDBTRequest(farmer_id=farmer_id).get_payload()
-        
+        logger.info("Beckn [mahadbt:mh-vistaar] request payload: %s", json.dumps(payload, ensure_ascii=False))
+
         async with httpx.AsyncClient() as client:
             response = await client.post(os.getenv("BAP_ENDPOINT"), json=payload, timeout=15.0)
 

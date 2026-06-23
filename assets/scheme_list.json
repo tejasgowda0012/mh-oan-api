@@ -513,5 +513,65 @@
         "scheme_code": "pmfmfpe-training",
         "scheme_name": "Pradhan Mantri Formalisation of Micro Food Processing Enterprises",
         "type": "central"
+    },
+    {
+        "scheme_code": "kcc",
+        "scheme_name": "Kisan Credit Card (KCC)",
+        "type": "bharat_vistaar"
+    },
+    {
+        "scheme_code": "pmkisan",
+        "scheme_name": "Pradhan Mantri Kisan Samman Nidhi (PM-KISAN)",
+        "type": "bharat_vistaar"
+    },
+    {
+        "scheme_code": "pmfby",
+        "scheme_name": "Pradhan Mantri Fasal Bima Yojana (PMFBY)",
+        "type": "bharat_vistaar"
+    },
+    {
+        "scheme_code": "shc",
+        "scheme_name": "Soil Health Card (SHC)",
+        "type": "bharat_vistaar"
+    },
+    {
+        "scheme_code": "pmksy",
+        "scheme_name": "Pradhan Mantri Krishi Sinchai Yojana (PMKSY)",
+        "type": "bharat_vistaar"
+    },
+    {
+        "scheme_code": "sathi",
+        "scheme_name": "SATHI (Sahakar Aatmanirbhar Taknik Helpdesk Initiative)",
+        "type": "bharat_vistaar"
+    },
+    {
+        "scheme_code": "pmasha",
+        "scheme_name": "Pradhan Mantri Annadata Aay Sanrakshan Abhiyan (PM-ASHA)",
+        "type": "bharat_vistaar"
+    },
+    {
+        "scheme_code": "aif",
+        "scheme_name": "Agriculture Infrastructure Fund (AIF)",
+        "type": "bharat_vistaar"
+    },
+    {
+        "scheme_code": "smam",
+        "scheme_name": "Sub Mission on Agriculture Mechanization (SMAM)",
+        "type": "bharat_vistaar"
+    },
+    {
+        "scheme_code": "pdmc",
+        "scheme_name": "Per Drop More Crop (PDMC)",
+        "type": "bharat_vistaar"
+    },
+    {
+        "scheme_code": "nfsm",
+        "scheme_name": "National Food Security Mission (NFSM)",
+        "type": "bharat_vistaar"
+    },
+    {
+        "scheme_code": "rad",
+        "scheme_name": "Rainfed Area Development (RAD)",
+        "type": "bharat_vistaar"
     }
 ]
