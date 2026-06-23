@@ -8,6 +8,7 @@ from agents.tools.agri_services import agri_services
 from agents.tools.maps import reverse_geocode, forward_geocode  
 from agents.tools.agristack import fetch_agristack_data
 from agents.tools.mahadbt import get_scheme_status
+from agents.tools.pocra_dbt import get_pocra_dbt_status
 from agents.tools.terms import search_terms
 from agents.tools.scheme_info import get_scheme_codes, get_scheme_info
 from agents.tools.staff_contact import contact_agricultural_staff
@@ -116,6 +117,14 @@ TOOLS = [
         get_scheme_status,
         takes_ctx=True,
         docstring_format='auto', 
+        require_parameter_descriptions=False,
+    ),
+
+    # POCRA DBT
+    Tool(
+        get_pocra_dbt_status,
+        takes_ctx=True,
+        docstring_format='auto',
         require_parameter_descriptions=False,
     ),
 
