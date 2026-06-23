@@ -15,6 +15,11 @@ from agents.tools.pest_detection import (
     analyze_pest_disease_image,
 )
 # from agents.tools.bharat_vistaar import call_bharat_vistaar_network
+from agents.tools.cross_network import (
+    pmkisan_installment_init,
+    pmkisan_installment_status,
+    smam_application_status,
+)
 
 TOOLS = [
     # Search Terms
@@ -143,5 +148,29 @@ TOOLS = [
     #     docstring_format='auto',
     #     require_parameter_descriptions=True,
     # ),
+
+    # PM-KISAN installment status — Step 1: init (send registration number)
+    Tool(
+        pmkisan_installment_init,
+        takes_ctx=True,
+        docstring_format='auto',
+        require_parameter_descriptions=True,
+    ),
+
+    # PM-KISAN installment status — Step 2: status (submit OTP, get installment details)
+    Tool(
+        pmkisan_installment_status,
+        takes_ctx=True,
+        docstring_format='auto',
+        require_parameter_descriptions=True,
+    ),
+
+    # SMAM application status (single step by application number)
+    Tool(
+        smam_application_status,
+        takes_ctx=False,
+        docstring_format='auto',
+        require_parameter_descriptions=True,
+    ),
 
 ]
