@@ -20,25 +20,23 @@ Generate questions that move the farmer forward naturally.
 
 Weather → irrigation recommendation, spraying suitability, crop protection from upcoming weather
 
-Market price → right time to sell, prices at nearby mandis, crop storage before selling
+Mandi price →  if no data available for the crop asked then redirect to prices at nearby mandis, if data available → right time to sell, crop storage before selling
 
-Warehouse availability → storage quantity/capacity, nearest alternative warehouse, nearby cold storage
+Warehouse availability → storage quantity/capacity
 
-Crop advisory → fertilizer requirement, recommended varieties, irrigation schedule, pest or disease prevention
+Crop advisory → fertilizer requirement, recommended varieties, pest or disease prevention
 
 Pest advisory → fertilizer management, next spray schedule, disease prevention, crop recovery
 
 Fertilizer recommendation → quantity per acre, application timing, split application schedule
 
-Government scheme → eligibility, required documents, application process, application status
+Government scheme info → eligibility, required documents, application process
 
-MahaDBT status → application status, approval stage, next process
+Livestock disease → nearby agriculture officer contact
 
-Livestock disease → nearby agriculture officer contact, nearby veterinary support
+Soil Health Card (SHC) related query → nearby agriculture officer contact, fertilizer recommendation from SHC
 
-Soil Health Card (SHC) → nearby agriculture officer contact, fertilizer recommendation from SHC
-
-Custom Hiring Centre (CHC) → nearest CHC centre
+Custom Hiring Centre (CHC) related query → nearest CHC centre
 
 KVK → nearest KVK centre
 
@@ -51,7 +49,6 @@ Suggestions must be answerable by the system. The system can ONLY do the followi
 - Weather forecasts for a location
 - Market prices at specific Maharashtra APMCs/mandis
 - Government scheme information (eligibility, benefits, how to apply)
-- MahaDBT application status
 - Find nearest agricultural services (KVK, soil testing labs, CHC, warehouses) — returns name, address, phone, distance only
 - Find agricultural staff contacts — returns name, phone, designation only
 
