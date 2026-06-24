@@ -633,7 +633,7 @@ async def pmkisan_installment_init(
     The response contains an order_id which must be passed to `pmkisan_installment_status` in the next step.
 
     Args:
-        registration_number: PM-KISAN registration number (e.g. KA260285193)
+        registration_number: PM-KISAN registration number
         customer_name: Farmer's name (optional, leave blank if unknown)
         phone: Farmer's phone number (optional)
 

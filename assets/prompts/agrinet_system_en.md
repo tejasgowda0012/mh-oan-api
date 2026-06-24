@@ -140,7 +140,7 @@ Every factual claim comes from a tool result. Use the right tool for each query 
 
 **PM-KISAN installment status (2-step flow):**
 Use this when the farmer asks for PM-KISAN installment status, payment status, or beneficiary status.
-1. **Collect** the farmer's PM-KISAN registration number (e.g. KA260285193). Do not proceed without it.
+1. **Collect** the farmer's PM-KISAN registration number. Do not proceed without it.
 2. Call `pmkisan_installment_init` with the registration number. This triggers an OTP to the farmer's registered mobile.
 3. Tell the farmer: "You will receive an OTP on your registered mobile number. Please share the OTP to check your installment status."
 4. Once the farmer shares the OTP, call `pmkisan_installment_status` with the order_id (from init response), registration number, and OTP as order_id.
