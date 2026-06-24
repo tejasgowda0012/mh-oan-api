@@ -4,6 +4,10 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, "Noto Sans", sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", Menlo, Consolas,
+    monospace;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-ring: var(--ring);
@@ -70,9 +74,25 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-feature-settings: "cv11", "ss01";
+    font-variation-settings: normal;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  /* Tabular, slightly tighter numerals for ids / counts. */
+  .font-mono {
+    font-feature-settings: "tnum";
+    letter-spacing: -0.01em;
   }
 }
 
 html {
   color-scheme: light dark;
+}
+
+/* Compact, readable code/JSON blocks. */
+pre {
+  font-size: 11px;
+  line-height: 1.5;
 }

@@ -3,7 +3,7 @@
 import { use, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, ChevronRight, Loader2 } from "lucide-react";
 import { apiFetch, buildQuery } from "@/lib/api";
 import type { RowResponse } from "@/lib/types";
 import { parseConversation } from "@/lib/parse";
@@ -55,25 +55,29 @@ export default function ConversationPage({
 
   return (
     <div className="min-h-screen">
-      <header className="border-b">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-3">
+      <header className="sticky top-0 z-20 border-b bg-background/80 backdrop-blur">
+        <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-5 py-2.5">
+          <div className="flex min-w-0 items-center gap-2.5">
             <Link
               href={backHref}
-              className="inline-flex size-9 items-center justify-center rounded-md hover:bg-accent"
+              className="inline-flex size-8 shrink-0 items-center justify-center rounded-md hover:bg-accent"
             >
               <ArrowLeft className="size-4" />
             </Link>
-            <div>
-              <h1 className="text-lg font-semibold">Conversation #{idx}</h1>
-              <p className="font-mono text-xs text-muted-foreground">{dataset}</p>
+            <div className="min-w-0">
+              <h1 className="text-lg font-semibold leading-tight tracking-tight">
+                Conversation #{idx}
+              </h1>
+              <p className="truncate font-mono text-[11px] text-muted-foreground">
+                {dataset}
+              </p>
             </div>
           </div>
           <ThemeToggle />
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl space-y-6 px-6 py-6">
+      <main className="mx-auto max-w-3xl space-y-4 px-5 py-5">
         {loading && (
           <div className="flex justify-center py-12">
             <Loader2 className="size-6 animate-spin text-muted-foreground" />
@@ -81,7 +85,7 @@ export default function ConversationPage({
         )}
 
         {error && (
-          <div className="rounded-md bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          <div className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
             {error}
           </div>
         )}
@@ -89,19 +93,29 @@ export default function ConversationPage({
         {data && !loading && (
           <>
             {scalarEntries.length > 0 && (
-              <div className="rounded-md border p-4">
-                <h2 className="mb-3 text-sm font-semibold">Metadata</h2>
-                <dl className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
+              <details className="group rounded-md border bg-muted/20">
+                <summary className="flex cursor-pointer list-none items-center gap-1.5 px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  <ChevronRight className="size-3 transition-transform group-open:rotate-90" />
+                  Metadata
+                  <span className="font-normal lowercase opacity-60">
+                    ({scalarEntries.length} fields)
+                  </span>
+                </summary>
+                <div className="flex flex-wrap gap-1.5 px-3 pb-3">
                   {scalarEntries.map(([k, v]) => (
-                    <div key={k} className="min-w-0">
-                      <dt className="text-xs text-muted-foreground">{k}</dt>
-                      <dd className="truncate text-sm" title={stringify(v)}>
+                    <span
+                      key={k}
+                      className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-background px-2 py-0.5 text-[11px]"
+                      title={stringify(v)}
+                    >
+                      <span className="text-muted-foreground">{k}</span>
+                      <span className="max-w-[200px] truncate font-medium">
                         {stringify(v)}
-                      </dd>
-                    </div>
+                      </span>
+                    </span>
                   ))}
-                </dl>
-              </div>
+                </div>
+              </details>
             )}
 
             {data.message_columns.length === 0 ? (
@@ -109,16 +123,19 @@ export default function ConversationPage({
                 No conversation column detected in this dataset.
               </p>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-3">
+                <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Transcript
+                </div>
                 {data.message_columns.length > 1 && (
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap gap-1.5">
                     {data.message_columns.map((c) => (
                       <button
                         key={c}
                         type="button"
                         onClick={() => setActiveCol(c)}
                         className={
-                          "rounded-md border px-3 py-1.5 text-xs font-medium " +
+                          "rounded-md border px-2.5 py-1 text-[11px] font-medium " +
                           (activeCol === c
                             ? "border-primary bg-primary text-primary-foreground"
                             : "border-border hover:bg-accent")

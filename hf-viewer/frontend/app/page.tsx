@@ -112,19 +112,21 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen">
-      <header className="border-b">
-        <div className="mx-auto flex max-w-[1400px] items-center justify-between px-6 py-4">
+      <header className="sticky top-0 z-20 border-b bg-background/80 backdrop-blur">
+        <div className="mx-auto flex max-w-[1280px] items-center justify-between gap-4 px-5 py-3">
           <div>
-            <h1 className="text-xl font-semibold">HF Dataset Conversation Viewer</h1>
-            <p className="text-sm text-muted-foreground">
-              Load a Hugging Face dataset and review conversations with tool calls
+            <h1 className="text-lg font-semibold tracking-tight">
+              HF Conversation Viewer
+            </h1>
+            <p className="text-xs text-muted-foreground">
+              Browse Hugging Face conversation datasets with tool calls
             </p>
           </div>
           <ThemeToggle />
         </div>
       </header>
 
-      <main className="mx-auto max-w-[1400px] space-y-6 px-6 py-6">
+      <main className="mx-auto max-w-[1280px] space-y-4 px-5 py-5">
         <DatasetLoader
           initialDataset={meta?.dataset ?? DEFAULT_DATASET}
           loading={loading}
@@ -132,25 +134,27 @@ export default function HomePage() {
         />
 
         {error && (
-          <div className="rounded-md bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          <div className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
             {error}
           </div>
         )}
 
         {meta && (
-          <div className="space-y-4">
-            <div className="flex flex-wrap items-center gap-4 text-sm">
-              <span className="font-mono font-medium">{meta.dataset}</span>
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
+              <span className="font-mono font-medium text-foreground">
+                {meta.dataset}
+              </span>
 
               {meta.configs.length > 1 && (
-                <label className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground">Config</span>
+                <label className="flex items-center gap-1.5">
+                  <span>config</span>
                   <select
                     value={meta.config ?? ""}
                     onChange={(e) =>
                       onConfigSplitChange(e.target.value, meta.split)
                     }
-                    className="h-8 rounded-md border border-input bg-transparent px-2 text-xs"
+                    className="h-7 rounded-md border border-input bg-transparent px-2 text-xs"
                   >
                     {meta.configs.map((c) => (
                       <option key={c} value={c}>
@@ -162,14 +166,14 @@ export default function HomePage() {
               )}
 
               {meta.splits.length > 1 && (
-                <label className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground">Split</span>
+                <label className="flex items-center gap-1.5">
+                  <span>split</span>
                   <select
                     value={meta.split}
                     onChange={(e) =>
                       onConfigSplitChange(meta.config ?? "", e.target.value)
                     }
-                    className="h-8 rounded-md border border-input bg-transparent px-2 text-xs"
+                    className="h-7 rounded-md border border-input bg-transparent px-2 text-xs"
                   >
                     {meta.splits.map((s) => (
                       <option key={s} value={s}>
@@ -180,13 +184,13 @@ export default function HomePage() {
                 </label>
               )}
 
-              <span className="text-xs text-muted-foreground">
+              <span className="tabular-nums">
                 {meta.num_rows.toLocaleString()} rows
               </span>
               {meta.message_columns.length > 0 && (
-                <span className="text-xs text-muted-foreground">
-                  conversation columns:{" "}
-                  <span className="font-mono">
+                <span>
+                  conversation:{" "}
+                  <span className="font-mono text-foreground">
                     {meta.message_columns.join(", ")}
                   </span>
                 </span>
@@ -212,11 +216,11 @@ export default function HomePage() {
         )}
 
         {!meta && !loading && !error && (
-          <p className="text-sm text-muted-foreground">
-            Enter a dataset id above (default{" "}
+          <p className="text-xs text-muted-foreground">
+            Enter a dataset id (default{" "}
             <span className="font-mono">{DEFAULT_DATASET}</span>) and click{" "}
-            <span className="font-medium">Load dataset</span>. Private datasets
-            need an HF token.
+            <span className="font-medium text-foreground">Load dataset</span>.
+            Private datasets need an HF token.
           </p>
         )}
       </main>
