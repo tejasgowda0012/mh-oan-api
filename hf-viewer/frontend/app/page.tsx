@@ -1,0 +1,225 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Loader2 } from "lucide-react";
+import { apiFetch, buildQuery } from "@/lib/api";
+import type { DatasetMeta, RowsResponse } from "@/lib/types";
+import { DatasetLoader } from "@/components/dataset-loader";
+import { ConversationTable } from "@/components/conversation-table";
+import { ThemeToggle } from "@/components/theme-toggle";
+
+const DEFAULT_DATASET = "kenpath/mh-synthetic-v1";
+const PAGE_SIZE = 50;
+const STORE_KEY = "hf_view";
+
+interface ViewState {
+  dataset: string;
+  config: string | null;
+  split: string;
+  offset: number;
+}
+
+export default function HomePage() {
+  const router = useRouter();
+  const [meta, setMeta] = useState<DatasetMeta | null>(null);
+  const [rows, setRows] = useState<RowsResponse | null>(null);
+  const [offset, setOffset] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [rowsLoading, setRowsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchRows = useCallback(
+    async (m: DatasetMeta, newOffset: number) => {
+      setRowsLoading(true);
+      setError(null);
+      try {
+        const qs = buildQuery({
+          dataset: m.dataset,
+          config: m.config,
+          split: m.split,
+          offset: newOffset,
+          length: PAGE_SIZE,
+        });
+        const data = await apiFetch<RowsResponse>(`/api/rows?${qs}`);
+        setRows(data);
+        setOffset(newOffset);
+        sessionStorage.setItem(
+          STORE_KEY,
+          JSON.stringify({
+            dataset: m.dataset,
+            config: m.config,
+            split: m.split,
+            offset: newOffset,
+          } satisfies ViewState)
+        );
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setRowsLoading(false);
+      }
+    },
+    []
+  );
+
+  const loadDataset = useCallback(
+    async (dataset: string, config?: string | null, split?: string | null, startOffset = 0) => {
+      setLoading(true);
+      setError(null);
+      setRows(null);
+      try {
+        const qs = buildQuery({ dataset, config, split });
+        const m = await apiFetch<DatasetMeta>(`/api/load?${qs}`);
+        setMeta(m);
+        await fetchRows(m, startOffset);
+      } catch (e) {
+        setMeta(null);
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [fetchRows]
+  );
+
+  // Restore last view on mount.
+  useEffect(() => {
+    const raw = sessionStorage.getItem(STORE_KEY);
+    if (raw) {
+      try {
+        const s = JSON.parse(raw) as ViewState;
+        loadDataset(s.dataset, s.config, s.split, s.offset);
+      } catch {
+        // ignore
+      }
+    }
+  }, [loadDataset]);
+
+  const openConversation = (idx: number) => {
+    if (!meta) return;
+    const qs = buildQuery({
+      dataset: meta.dataset,
+      config: meta.config,
+      split: meta.split,
+    });
+    router.push(`/conversation/${idx}?${qs}`);
+  };
+
+  const onConfigSplitChange = (config: string, split: string) => {
+    if (!meta) return;
+    loadDataset(meta.dataset, config, split, 0);
+  };
+
+  return (
+    <div className="min-h-screen">
+      <header className="border-b">
+        <div className="mx-auto flex max-w-[1400px] items-center justify-between px-6 py-4">
+          <div>
+            <h1 className="text-xl font-semibold">HF Dataset Conversation Viewer</h1>
+            <p className="text-sm text-muted-foreground">
+              Load a Hugging Face dataset and review conversations with tool calls
+            </p>
+          </div>
+          <ThemeToggle />
+        </div>
+      </header>
+
+      <main className="mx-auto max-w-[1400px] space-y-6 px-6 py-6">
+        <DatasetLoader
+          initialDataset={meta?.dataset ?? DEFAULT_DATASET}
+          loading={loading}
+          onLoad={(d) => loadDataset(d)}
+        />
+
+        {error && (
+          <div className="rounded-md bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            {error}
+          </div>
+        )}
+
+        {meta && (
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center gap-4 text-sm">
+              <span className="font-mono font-medium">{meta.dataset}</span>
+
+              {meta.configs.length > 1 && (
+                <label className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">Config</span>
+                  <select
+                    value={meta.config ?? ""}
+                    onChange={(e) =>
+                      onConfigSplitChange(e.target.value, meta.split)
+                    }
+                    className="h-8 rounded-md border border-input bg-transparent px-2 text-xs"
+                  >
+                    {meta.configs.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              {meta.splits.length > 1 && (
+                <label className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">Split</span>
+                  <select
+                    value={meta.split}
+                    onChange={(e) =>
+                      onConfigSplitChange(meta.config ?? "", e.target.value)
+                    }
+                    className="h-8 rounded-md border border-input bg-transparent px-2 text-xs"
+                  >
+                    {meta.splits.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              <span className="text-xs text-muted-foreground">
+                {meta.num_rows.toLocaleString()} rows
+              </span>
+              {meta.message_columns.length > 0 && (
+                <span className="text-xs text-muted-foreground">
+                  conversation columns:{" "}
+                  <span className="font-mono">
+                    {meta.message_columns.join(", ")}
+                  </span>
+                </span>
+              )}
+            </div>
+
+            {rowsLoading && !rows ? (
+              <div className="flex justify-center py-12">
+                <Loader2 className="size-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : rows ? (
+              <ConversationTable
+                meta={meta}
+                rows={rows.rows}
+                total={rows.num_rows_total}
+                offset={offset}
+                pageSize={PAGE_SIZE}
+                onPageChange={(o) => fetchRows(meta, o)}
+                onOpen={openConversation}
+              />
+            ) : null}
+          </div>
+        )}
+
+        {!meta && !loading && !error && (
+          <p className="text-sm text-muted-foreground">
+            Enter a dataset id above (default{" "}
+            <span className="font-mono">{DEFAULT_DATASET}</span>) and click{" "}
+            <span className="font-medium">Load dataset</span>. Private datasets
+            need an HF token.
+          </p>
+        )}
+      </main>
+    </div>
+  );
+}

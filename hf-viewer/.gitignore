@@ -1,0 +1,19 @@
+# Node / Next.js
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/next-env.d.ts.timestamp
+*.tsbuildinfo
+
+# Python
+backend/__pycache__/
+backend/.venv/
+**/__pycache__/
+
+# Env
+.env
+.env.local
+*.local
+
+# Local HuggingFace dataset cache
+.hf_cache/
