@@ -17,3 +17,6 @@ backend/.venv/
 
 # Local HuggingFace dataset cache
 .hf_cache/
+
+# Local JSONL working copies (exported datasets + edits)
+data/

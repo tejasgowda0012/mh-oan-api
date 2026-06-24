@@ -5,6 +5,7 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  Trash2,
 } from "lucide-react";
 import type { DatasetMeta } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -17,6 +18,8 @@ interface ConversationTableProps {
   pageSize: number;
   onPageChange: (offset: number) => void;
   onOpen: (idx: number) => void;
+  /** When provided, a delete action is shown for each row (local mode only). */
+  onDelete?: (sessionId: string) => void;
 }
 
 const LANG_LABELS: Record<string, string> = {
@@ -109,6 +112,7 @@ export function ConversationTable({
   pageSize,
   onPageChange,
   onOpen,
+  onDelete,
 }: ConversationTableProps) {
   const scalarCols = meta.columns.filter(
     (c) => !meta.message_columns.includes(c)
@@ -141,6 +145,7 @@ export function ConversationTable({
                   {c}
                 </th>
               ))}
+              {onDelete && <th className="h-10 w-10 px-3" />}
             </tr>
           </thead>
           <tbody>
@@ -166,12 +171,33 @@ export function ConversationTable({
                     {row[`_${c}_turns`] == null ? "\u2014" : String(row[`_${c}_turns`])}
                   </td>
                 ))}
+                {onDelete && (
+                  <td className="px-3 py-2 text-right align-middle">
+                    <button
+                      type="button"
+                      title="Delete conversation (local only)"
+                      disabled={!row.session_id}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDelete(String(row.session_id ?? ""));
+                      }}
+                      className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors disabled:opacity-30 enabled:hover:bg-red-100 enabled:hover:text-red-700 dark:enabled:hover:bg-red-950 dark:enabled:hover:text-red-300"
+                    >
+                      <Trash2 className="size-4" />
+                    </button>
+                  </td>
+                )}
               </tr>
             ))}
             {rows.length === 0 && (
               <tr>
                 <td
-                  colSpan={scalarCols.length + meta.message_columns.length + 1}
+                  colSpan={
+                    scalarCols.length +
+                    meta.message_columns.length +
+                    1 +
+                    (onDelete ? 1 : 0)
+                  }
                   className="px-3 py-10 text-center text-muted-foreground"
                 >
                   No rows.

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
-import { apiFetch, buildQuery } from "@/lib/api";
+import { apiDelete, apiFetch, buildQuery } from "@/lib/api";
 import type { DatasetMeta, RowsResponse } from "@/lib/types";
 import { DatasetLoader } from "@/components/dataset-loader";
 import { ConversationTable } from "@/components/conversation-table";
@@ -110,6 +110,34 @@ export default function HomePage() {
     loadDataset(meta.dataset, config, split, 0);
   };
 
+  const handleDelete = useCallback(
+    async (sessionId: string) => {
+      if (!meta || !sessionId) return;
+      if (
+        !window.confirm(
+          "Delete this conversation from the local JSONL? This cannot be undone " +
+            "(the Hugging Face dataset is not affected)."
+        )
+      ) {
+        return;
+      }
+      try {
+        await apiDelete(
+          `/api/row?${buildQuery({ dataset: meta.dataset, session_id: sessionId })}`
+        );
+        const newTotal = Math.max(0, (rows?.num_rows_total ?? 1) - 1);
+        // If we just emptied the last page, step back one page.
+        const target =
+          offset >= newTotal && offset >= PAGE_SIZE ? offset - PAGE_SIZE : offset;
+        setMeta((m) => (m ? { ...m, num_rows: Math.max(0, m.num_rows - 1) } : m));
+        await fetchRows(meta, target);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      }
+    },
+    [meta, rows, offset, fetchRows]
+  );
+
   return (
     <div className="min-h-screen">
       <header className="sticky top-0 z-20 border-b bg-background/80 backdrop-blur">
@@ -145,6 +173,16 @@ export default function HomePage() {
               <span className="font-mono font-medium text-foreground">
                 {meta.dataset}
               </span>
+
+              {meta.source === "local" ? (
+                <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-medium text-green-800 dark:bg-green-950 dark:text-green-300">
+                  local copy &middot; editable
+                </span>
+              ) : (
+                <span className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-[11px] font-medium">
+                  hub &middot; read-only
+                </span>
+              )}
 
               {meta.configs.length > 1 && (
                 <label className="flex items-center gap-1.5">
@@ -210,6 +248,7 @@ export default function HomePage() {
                 pageSize={PAGE_SIZE}
                 onPageChange={(o) => fetchRows(meta, o)}
                 onOpen={openConversation}
+                onDelete={meta.source === "local" ? handleDelete : undefined}
               />
             ) : null}
           </div>

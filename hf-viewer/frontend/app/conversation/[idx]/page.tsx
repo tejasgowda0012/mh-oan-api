@@ -1,10 +1,10 @@
 "use client";
 
 import { use, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, ChevronRight, Loader2 } from "lucide-react";
-import { apiFetch, buildQuery } from "@/lib/api";
+import { ArrowLeft, ChevronRight, Loader2, Trash2 } from "lucide-react";
+import { apiDelete, apiFetch, buildQuery } from "@/lib/api";
 import type { RowResponse } from "@/lib/types";
 import { parseConversation } from "@/lib/parse";
 import { Timeline } from "@/components/timeline";
@@ -16,6 +16,7 @@ export default function ConversationPage({
   params: Promise<{ idx: string }>;
 }) {
   const { idx } = use(params);
+  const router = useRouter();
   const search = useSearchParams();
   const dataset = search.get("dataset") ?? "";
   const config = search.get("config");
@@ -25,6 +26,7 @@ export default function ConversationPage({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeCol, setActiveCol] = useState<string>("");
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -40,6 +42,31 @@ export default function ConversationPage({
   }, [dataset, config, split, idx]);
 
   const backHref = `/?${buildQuery({ dataset, config, split })}`;
+
+  const sessionId = data?.row?.session_id;
+  const canDelete = data?.source === "local" && Boolean(sessionId);
+
+  const handleDelete = async () => {
+    if (!canDelete || !sessionId) return;
+    if (
+      !window.confirm(
+        "Delete this conversation from the local JSONL? This cannot be undone " +
+          "(the Hugging Face dataset is not affected)."
+      )
+    ) {
+      return;
+    }
+    setDeleting(true);
+    try {
+      await apiDelete(
+        `/api/row?${buildQuery({ dataset, session_id: String(sessionId) })}`
+      );
+      router.push(backHref);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setDeleting(false);
+    }
+  };
 
   const scalarEntries = useMemo(() => {
     if (!data) return [];
@@ -73,7 +100,24 @@ export default function ConversationPage({
               </p>
             </div>
           </div>
-          <ThemeToggle />
+          <div className="flex shrink-0 items-center gap-1.5">
+            {canDelete && (
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={deleting}
+                title="Delete conversation (local only)"
+                className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors disabled:opacity-40 enabled:hover:bg-red-100 enabled:hover:text-red-700 dark:enabled:hover:bg-red-950 dark:enabled:hover:text-red-300"
+              >
+                {deleting ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Trash2 className="size-4" />
+                )}
+              </button>
+            )}
+            <ThemeToggle />
+          </div>
         </div>
       </header>
 

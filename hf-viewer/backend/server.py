@@ -25,6 +25,7 @@ from __future__ import annotations
 import json
 import os
 import threading
+from pathlib import Path
 from typing import Any, Optional
 
 from datasets import (
@@ -48,6 +49,13 @@ app.add_middleware(
 # instant. Loading a dataset can download files, so we guard with a lock.
 _CACHE: dict[tuple, Any] = {}
 _LOCK = threading.Lock()
+
+# Local JSONL working copies. When a dataset has been exported here (via
+# export_jsonl.py), the viewer reads/edits it locally and deletes are persisted
+# to the file. The Hugging Face Hub is never modified.
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+# Cache of local rows keyed by path -> (mtime, rows, columns, message_columns).
+_LOCAL_CACHE: dict[str, tuple] = {}
 
 # Column names that commonly hold a conversation / message history.
 MESSAGE_COLUMN_CANDIDATES = [
@@ -110,10 +118,9 @@ def _looks_like_messages(parsed: list) -> bool:
     return bool(keys & {"role", "parts", "content", "tool_calls"})
 
 
-def _detect_message_columns(ds) -> list[str]:
+def _detect_msg_cols(column_names: list[str], sample: dict) -> list[str]:
     cols: list[str] = []
-    sample = ds[0] if len(ds) > 0 else {}
-    for col in ds.column_names:
+    for col in column_names:
         if col in MESSAGE_COLUMN_CANDIDATES:
             cols.append(col)
             continue
@@ -122,6 +129,11 @@ def _detect_message_columns(ds) -> list[str]:
             cols.append(col)
     # Preserve order, dedupe.
     return list(dict.fromkeys(cols))
+
+
+def _detect_message_columns(ds) -> list[str]:
+    sample = ds[0] if len(ds) > 0 else {}
+    return _detect_msg_cols(ds.column_names, sample)
 
 
 def _count_turns(value: Any) -> Optional[int]:
@@ -148,6 +160,57 @@ def _get_dataset(name: str, config: Optional[str], split: str, token: Optional[s
     return ds
 
 
+def _local_path(name: str) -> Path:
+    """Path to the local JSONL working copy for a dataset id."""
+    safe = name.replace("/", "__")
+    return DATA_DIR / f"{safe}.jsonl"
+
+
+def _load_local(path: Path) -> tuple[list[dict], list[str], list[str]]:
+    """Load (and cache) a local JSONL file. Returns (rows, columns, msg_cols).
+
+    The cache is invalidated automatically when the file's mtime changes (e.g.
+    after a delete rewrites it).
+    """
+    key = str(path)
+    mtime = path.stat().st_mtime
+    with _LOCK:
+        cached = _LOCAL_CACHE.get(key)
+        if cached and cached[0] == mtime:
+            return cached[1], cached[2], cached[3]
+
+    rows: list[dict] = []
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if line:
+                rows.append(json.loads(line))
+
+    # Union of keys, preserving the order they first appear.
+    columns: list[str] = []
+    for r in rows:
+        for k in r.keys():
+            if k not in columns:
+                columns.append(k)
+    sample = rows[0] if rows else {}
+    msg_cols = _detect_msg_cols(columns, sample)
+
+    with _LOCK:
+        _LOCAL_CACHE[key] = (mtime, rows, columns, msg_cols)
+    return rows, columns, msg_cols
+
+
+def _rewrite_local(path: Path, rows: list[dict]) -> None:
+    """Atomically rewrite the local JSONL and drop the cache entry."""
+    tmp = path.with_suffix(".jsonl.tmp")
+    with open(tmp, "w", encoding="utf-8") as fh:
+        for r in rows:
+            fh.write(json.dumps(r, ensure_ascii=False, default=str) + "\n")
+    tmp.replace(path)
+    with _LOCK:
+        _LOCAL_CACHE.pop(str(path), None)
+
+
 @app.get("/api/load")
 def load(
     dataset: str = Query(..., description="HF dataset id or URL"),
@@ -155,11 +218,31 @@ def load(
     split: Optional[str] = Query(None),
     x_hf_token: Optional[str] = Header(None),
 ):
-    """Load (and cache) a dataset split and return its metadata."""
+    """Load (and cache) a dataset split and return its metadata.
+
+    If a local JSONL working copy exists for this dataset (created by
+    export_jsonl.py), it is served from disk and becomes editable (deletable).
+    Otherwise the dataset is read from the Hugging Face Hub (read-only).
+    """
     token = _resolve_token(x_hf_token)
     name = _normalize_dataset(dataset)
     if not name:
         raise HTTPException(status_code=400, detail="Empty dataset name")
+
+    local = _local_path(name)
+    if local.exists():
+        rows, columns, msg_cols = _load_local(local)
+        return {
+            "dataset": name,
+            "config": config or "default",
+            "split": split or "train",
+            "configs": [],
+            "splits": [],
+            "num_rows": len(rows),
+            "columns": columns,
+            "message_columns": msg_cols,
+            "source": "local",
+        }
 
     try:
         configs = get_dataset_config_names(name, token=token)
@@ -189,6 +272,7 @@ def load(
         "num_rows": len(ds),
         "columns": list(ds.column_names),
         "message_columns": msg_cols,
+        "source": "hub",
     }
 
 
@@ -208,17 +292,43 @@ def rows(
     """
     token = _resolve_token(x_hf_token)
     name = _normalize_dataset(dataset)
+
+    local = _local_path(name)
+    if local.exists():
+        rows, columns, msg_cols_list = _load_local(local)
+        msg_cols = set(msg_cols_list)
+        n = len(rows)
+        end = min(offset + length, n)
+        out: list[dict] = []
+        for idx in range(offset, end):
+            r = rows[idx]
+            meta: dict[str, Any] = {}
+            for col in columns:
+                val = r.get(col)
+                if col in msg_cols:
+                    meta[f"_{col}_turns"] = _count_turns(val)
+                else:
+                    meta[col] = val
+            out.append({"idx": idx, "row": _san(meta)})
+        return {
+            "num_rows_total": n,
+            "offset": offset,
+            "length": max(0, end - offset),
+            "rows": out,
+            "source": "local",
+        }
+
     ds = _get_dataset(name, config, split, token)
     msg_cols = set(_detect_message_columns(ds))
 
     n = len(ds)
     end = min(offset + length, n)
-    out: list[dict] = []
+    out = []
     if offset < end:
         batch = ds[offset:end]
         for i in range(end - offset):
             idx = offset + i
-            meta: dict[str, Any] = {}
+            meta = {}
             for col in ds.column_names:
                 val = batch[col][i]
                 if col in msg_cols:
@@ -227,7 +337,13 @@ def rows(
                     meta[col] = val
             out.append({"idx": idx, "row": _san(meta)})
 
-    return {"num_rows_total": n, "offset": offset, "length": end - offset, "rows": out}
+    return {
+        "num_rows_total": n,
+        "offset": offset,
+        "length": end - offset,
+        "rows": out,
+        "source": "hub",
+    }
 
 
 @app.get("/api/row")
@@ -241,6 +357,19 @@ def row(
     """Return a single full (untruncated) row, including all message columns."""
     token = _resolve_token(x_hf_token)
     name = _normalize_dataset(dataset)
+
+    local = _local_path(name)
+    if local.exists():
+        rows, _columns, msg_cols = _load_local(local)
+        if idx >= len(rows):
+            raise HTTPException(status_code=404, detail=f"Row {idx} out of range (n={len(rows)})")
+        return {
+            "idx": idx,
+            "row": _san(rows[idx]),
+            "message_columns": msg_cols,
+            "source": "local",
+        }
+
     ds = _get_dataset(name, config, split, token)
     if idx >= len(ds):
         raise HTTPException(status_code=404, detail=f"Row {idx} out of range (n={len(ds)})")
@@ -249,9 +378,41 @@ def row(
         "idx": idx,
         "row": _san(full),
         "message_columns": _detect_message_columns(ds),
+        "source": "hub",
     }
+
+
+@app.delete("/api/row")
+def delete_row(
+    dataset: str = Query(...),
+    session_id: str = Query(..., description="session_id of the conversation to delete"),
+):
+    """Delete a whole conversation from the local JSONL working copy.
+
+    Only the local file is modified; the Hugging Face Hub is never touched. The
+    dataset must have been exported locally first (via export_jsonl.py).
+    """
+    name = _normalize_dataset(dataset)
+    local = _local_path(name)
+    if not local.exists():
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Delete is only available for local JSONL datasets. "
+                "Export the dataset first with export_jsonl.py."
+            ),
+        )
+
+    rows, _columns, _msg_cols = _load_local(local)
+    target = str(session_id)
+    kept = [r for r in rows if str(r.get("session_id")) != target]
+    if len(kept) == len(rows):
+        raise HTTPException(status_code=404, detail=f"session_id '{session_id}' not found")
+
+    _rewrite_local(local, kept)
+    return {"deleted": session_id, "removed": len(rows) - len(kept), "remaining": len(kept)}
 
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "cached": len(_CACHE)}
+    return {"ok": True, "cached": len(_CACHE), "local_cached": len(_LOCAL_CACHE)}
