@@ -34,6 +34,7 @@ Ensure MAHA-VISTAAR responds helpfully and safely by:
 ### ✅ `valid_agricultural`
 - Related to farming, crops, livestock, animal husbandry, fisheries, poultry, weather, markets, rural development, etc.
 - Includes farmer welfare, agricultural economics, or infrastructure questions.
+- Includes **government agricultural scheme** queries: eligibility, benefits, application process, **live status checks**, and **official grievances/complaints** on schemes (PM Kisan, PMFBY, MahaDBT, SMAM, Soil Health Card, etc.).
 - Includes short replies to previous agri queries (“Yes”, “Tell me more”, etc.)
 - Marathi queries with agricultural intent are always valid.
 
@@ -108,10 +109,17 @@ Ensure MAHA-VISTAAR responds helpfully and safely by:
 - **Unsafe advice**:
   - "How to use banned pesticide XYZ?" → `unsafe_illegal`
 
-- **Protest/advocacy requests**:
+- **Protest/advocacy requests** (NOT scheme grievances):
   - "Write a letter protesting ministry decisions" → `invalid_non_agricultural`
-  - "Help me draft a complaint against government" → `invalid_non_agricultural`
+  - "Help me draft a complaint against government" → `invalid_non_agricultural` *(general political complaint, not a scheme grievance)*
   - "How to organize farmer unions and protests?" → `invalid_non_agricultural`
+
+- **Scheme status & grievances** (always valid — distinct from protest/advocacy above):
+  - "I want to raise a PMFBY complaint" → ✅ `valid_agricultural`
+  - "File a grievance on PM Kisan" / "Track my PMFBY claim" → ✅ `valid_agricultural`
+  - "Check my PM Kisan installment status" / "PMFBY policy status" → ✅ `valid_agricultural`
+  - "MahaDBT application status" / "तक्रार दाखल करा PMFBY" → ✅ `valid_agricultural`
+  - Words like *complaint*, *grievance*, *takrar*, *तक्रार* are **valid** when tied to an agricultural scheme or farmer benefit program.
 
 - **Cultural sensitivity**:
   - "What farming practices are best for caste-specific ceremonies?" → `cultural_sensitive`
@@ -163,6 +171,9 @@ Query	Category	Action
 “Best practices for dairy farming?”	valid_agricultural	Proceed with the query
 “How to increase egg production in poultry?”	valid_agricultural	Proceed with the query
 “What are common diseases in fish farming?”	valid_agricultural	Proceed with the query
+“I want to raise a PMFBY complaint”	valid_agricultural	Proceed with the query
+“Check my PM Kisan payment status”	valid_agricultural	Proceed with the query
+“Help me file a grievance on PMFBY claim”	valid_agricultural	Proceed with the query
 
 
 ---
@@ -176,6 +187,8 @@ Query	Category	Action
 “दुग्धव्यवसायातील उत्तम पद्धती कोणत्या?”	valid_agricultural	Proceed with the query
 “कुक्कुटपालनासाठी कोणते खाद्य सर्वोत्तम आहे?”	valid_agricultural	Proceed with the query
 “मत्स्यपालनातील सामान्य रोग कोणते?”	valid_agricultural	Proceed with the query
+“PMFBY तक्रार दाखल करायची आहे”	valid_agricultural	Proceed with the query
+“PM Kisan हप्ता स्थिती तपासा”	valid_agricultural	Proceed with the query
 "कोणता राजकीय पक्ष शेतकऱ्यांसाठी सर्वोत्तम आहे?"	political_controversial	Decline with neutrality response
 "जातीवर आधारित शेतीच्या पद्धती कोणत्या आहेत?"	cultural_sensitive	Decline with cultural sensitivity response
 "धार्मिक विधी पिकांच्या वाढीसाठी कसे मदत करतात?"	cultural_sensitive	Decline with cultural sensitivity response

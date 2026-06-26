@@ -1,6 +1,6 @@
 """
 
-MahaDBT Scheme status
+Cross-network scheme status
 
 """
 
@@ -302,7 +302,7 @@ class ResponseItem(BaseModel):
     def __str__(self, mask_pii: bool = True) -> str:
         return self.message.__str__(mask_pii=mask_pii)
 
-class MahaDBTResponse(BaseModel):
+class SchemeStatusResponse(BaseModel):
     context: Context
     responses: List[ResponseItem]
 
@@ -331,7 +331,7 @@ class MahaDBTResponse(BaseModel):
 
     def __str__(self, mask_pii: bool = True) -> str:
         lines = []
-        lines.append("## MahaDBT Scheme Status Information")
+        lines.append("## Scheme Status Information")
         lines.append("")
 
         has_scheme_data = self._has_scheme_data()
@@ -453,8 +453,8 @@ class MahaDBTResponse(BaseModel):
 # -----------------------
 # Request Model
 # -----------------------
-class MahaDBTRequest(BaseModel):
-    """MahaDBT Request model for the MahaDBT API.
+class SchemeStatusRequest(BaseModel):
+    """Request model for the cross-network scheme status API.
 
     Args:
         farmer_id (str): The farmer ID to fetch scheme status information for
@@ -464,23 +464,23 @@ class MahaDBTRequest(BaseModel):
 
     def get_payload(self) -> Dict[str, Any]:
         """
-        Convert the MahaDBTRequest object to a dictionary.
+        Convert the SchemeStatusRequest object to a dictionary.
 
         Returns:
-            Dict[str, Any]: The dictionary representation of the MahaDBTRequest object
+            Dict[str, Any]: The dictionary representation of the SchemeStatusRequest object
         """
         now = datetime.now()
 
         return {
             "context": {
-                "domain": "mahadbt:mh-vistaar",
+                "domain": "advisory:mh-vistaar",
                 "ttl": "PT10S",
                 "action": "search",
                 "version": "1.1.0",
                 "bap_id": os.getenv("BAP_ID"),
                 "bap_uri": os.getenv("BAP_URI"),
-                "bpp_id": os.getenv("MAHADBT_BPP_ID"),
-                "bpp_uri": os.getenv("MAHADBT_BPP_URI"),
+                # "bpp_id": os.getenv("MAHADBT_BPP_ID"),
+                # "bpp_uri": os.getenv("MAHADBT_BPP_URI"),
                 "message_id": str(uuid.uuid4()),
                 "transaction_id": str(uuid.uuid4()),
                 "timestamp": str(int(now.timestamp())),
@@ -491,38 +491,329 @@ class MahaDBTRequest(BaseModel):
 
 @observe(name="tool:get_scheme_status",as_type="tool")
 async def get_scheme_status(ctx: RunContext[FarmerContext]) -> str:
-    """Fetch a summary of the farmer's scheme applications and their status from MahaDBT API. Returns a summary of the farmer's scheme applications and their status from MahaDBT, including application status, disbursement information, and scheme details."""
+    """Fetch a summary of the farmer's scheme applications and their status. Returns application status, disbursement information, and scheme details."""
     if ctx.deps.farmer_id:
         farmer_id = ctx.deps.farmer_id
     else:
         return "Farmer ID is not available in the context. Please register with your farmer ID."
 
     try:
-        payload = MahaDBTRequest(farmer_id=farmer_id).get_payload()
+        payload = SchemeStatusRequest(farmer_id=farmer_id).get_payload()
         logger.info("Beckn [mahadbt:mh-vistaar] request payload: %s", json.dumps(payload, ensure_ascii=False))
 
         async with httpx.AsyncClient() as client:
             response = await client.post(os.getenv("BAP_ENDPOINT"), json=payload, timeout=15.0)
 
         if response.status_code != 200:
-            logger.error(f"MahaDBT API returned status code {response.status_code}")
+            logger.error(f"Scheme status API returned status code {response.status_code}")
             return "Scheme status information service is currently unavailable. Please try again later."
 
-        scheme_response = MahaDBTResponse.model_validate(response.json())
+        scheme_response = SchemeStatusResponse.model_validate(response.json())
         return str(scheme_response)
 
     except httpx.TimeoutException as e:
-        logger.error(f"MahaDBT API request timed out: {str(e)}")
-        return "MahaDBT Scheme status request timed out. Please try again later."
+        logger.error(f"Scheme status API request timed out: {str(e)}")
+        return "Scheme status request timed out. Please try again later."
 
     except httpx.RequestError as e:
-        logger.error(f"MahaDBT API request failed: {e}")
-        return f"MahaDBT Scheme status request failed: {str(e)}"
+        logger.error(f"Scheme status API request failed: {e}")
+        return f"Scheme status request failed: {str(e)}"
 
     except UnexpectedModelBehavior as e:
-        logger.warning("MahaDBT request exceeded retry limit")
-        return "Sorry, the MahaDBT scheme status information is temporarily unavailable. Please try again later."
+        logger.warning("Scheme status request exceeded retry limit")
+        return "Sorry, the scheme status information is temporarily unavailable. Please try again later."
 
     except Exception as e:
-        logger.error(f"Error getting MahaDBT scheme status: {e}")
-        raise ModelRetry(f"Unexpected error in MahaDBT scheme status request. {str(e)}")
+        logger.error(f"Error getting scheme status: {e}")
+        raise ModelRetry(f"Unexpected error in scheme status request. {str(e)}")
+
+
+# -----------------------
+# PM-KISAN Installment Status (2-step: init → status)
+# -----------------------
+
+class PMKISANInitRequest(BaseModel):
+    """Step 1 — init: send registration number to get an order_id (OTP flow)."""
+
+    registration_number: str
+    customer_name: str = ""
+    phone: str = ""
+
+    def get_payload(self) -> Dict[str, Any]:
+        now = datetime.now()
+        return {
+            "context": {
+                "domain": "advisory:mh-vistaar",
+                "action": "init",
+                "version": "1.1.0",
+                "bap_id": os.getenv("BAP_ID"),
+                "bap_uri": os.getenv("BAP_URI"),
+                "message_id": str(uuid.uuid4()),
+                "transaction_id": str(uuid.uuid4()),
+                "timestamp": now.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+                "location": {"country": {"name": "India", "code": "IND"}},
+            },
+            "message": {
+                "order": {
+                    "provider": {"id": ""},
+                    "items": [{"id": ""}],
+                    "fulfillments": [
+                        {
+                            "customer": {
+                                "person": {
+                                    "name": self.customer_name,
+                                    "tags": [
+                                        {
+                                            "display": True,
+                                            "descriptor": {
+                                                "name": "Registration Details",
+                                                "code": "reg-details",
+                                            },
+                                            "list": [
+                                                {
+                                                    "descriptor": {
+                                                        "name": "Registration Number",
+                                                        "code": "reg-number",
+                                                    },
+                                                    "value": self.registration_number,
+                                                    "display": True,
+                                                }
+                                            ],
+                                        }
+                                    ],
+                                },
+                                "contact": {"phone": self.phone},
+                            }
+                        }
+                    ],
+                }
+            },
+        }
+
+
+class PMKISANStatusRequest(BaseModel):
+    """Step 2 — status: submit order_id (OTP) + registration number to get installment status."""
+
+    order_id: str
+    registration_number: str
+    phone_number: str = ""
+
+    def get_payload(self) -> Dict[str, Any]:
+        now = datetime.now()
+        return {
+            "context": {
+                "domain": "advisory:mh-vistaar",
+                "action": "status",
+                "version": "1.1.0",
+                "bap_id": os.getenv("BAP_ID"),
+                "bap_uri": os.getenv("BAP_URI"),
+                "message_id": str(uuid.uuid4()),
+                "transaction_id": str(uuid.uuid4()),
+                "timestamp": now.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+                "location": {"country": {"name": "India", "code": "IND"}},
+            },
+            "message": {
+                "order_id": self.order_id,
+                "registration_number": self.registration_number,
+                "phone_number": self.phone_number,
+            },
+        }
+
+
+@observe(name="tool:pmkisan_installment_init", as_type="tool")
+async def pmkisan_installment_init(
+    ctx: RunContext[FarmerContext],
+    registration_number: str,
+    customer_name: str = "",
+    phone: str = "",
+) -> str:
+    """Step 1 of PM-KISAN installment status — submit the farmer's registration number to initiate the OTP flow.
+
+    Call this first when the farmer asks for PM-KISAN installment/beneficiary status.
+    The response contains an order_id which must be passed to `pmkisan_installment_status` in the next step.
+
+    Args:
+        registration_number: PM-KISAN registration number
+        customer_name: Farmer's name (optional, leave blank if unknown)
+        phone: Farmer's phone number (optional)
+
+    Returns:
+        order_id to use in the next step, or an error message.
+    """
+    registration_number = (registration_number or "").strip()
+    if not registration_number:
+        raise ModelRetry("Ask the farmer for their PM-KISAN registration number before calling this tool.")
+
+    try:
+        payload = PMKISANInitRequest(
+            registration_number=registration_number,
+            customer_name=customer_name,
+            phone=phone,
+        ).get_payload()
+        logger.info("Beckn [pmkisan/init] request payload: %s", json.dumps(payload, ensure_ascii=False))
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(os.getenv("BAP_ENDPOINT"), json=payload, timeout=30.0)
+
+        if response.status_code != 200:
+            logger.error("PM-KISAN init API returned %s: %s", response.status_code, response.text[:300])
+            return "PM-KISAN status service is currently unavailable. Please try again later."
+
+        return response.text.strip() or "PM-KISAN init returned an empty response."
+
+    except httpx.TimeoutException:
+        logger.error("PM-KISAN init API timed out")
+        return "PM-KISAN request timed out. Please try again later."
+    except httpx.RequestError as e:
+        logger.error("PM-KISAN init API request failed: %s", e)
+        return f"PM-KISAN request failed: {e!s}"
+    except Exception as e:
+        logger.error("Unexpected error in PM-KISAN init: %s", e)
+        raise ModelRetry(f"Unexpected error in PM-KISAN init. {e!s}") from e
+
+
+@observe(name="tool:pmkisan_installment_status", as_type="tool")
+async def pmkisan_installment_status(
+    ctx: RunContext[FarmerContext],
+    order_id: str,
+    registration_number: str,
+    phone_number: str = "",
+) -> str:
+    """Step 2 of PM-KISAN installment status — submit the OTP (order_id from init step) to fetch live installment details.
+
+    Call this after `pmkisan_installment_init` once the farmer provides the OTP they received.
+
+    Args:
+        order_id: OTP or order_id returned by `pmkisan_installment_init`
+        registration_number: Same PM-KISAN registration number used in init
+        phone_number: Farmer's phone number (optional)
+
+    Returns:
+        PM-KISAN installment status details or an error message.
+    """
+    order_id = (order_id or "").strip()
+    registration_number = (registration_number or "").strip()
+    if not order_id:
+        raise ModelRetry("Ask the farmer for the OTP they received before calling this tool.")
+    if not registration_number:
+        raise ModelRetry("Registration number is required. Ask the farmer for their PM-KISAN registration number.")
+
+    try:
+        payload = PMKISANStatusRequest(
+            order_id=order_id,
+            registration_number=registration_number,
+            phone_number=phone_number,
+        ).get_payload()
+        logger.info("Beckn [pmkisan/status] request payload: %s", json.dumps(payload, ensure_ascii=False))
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(os.getenv("BAP_ENDPOINT"), json=payload, timeout=30.0)
+
+        if response.status_code != 200:
+            logger.error("PM-KISAN status API returned %s: %s", response.status_code, response.text[:300])
+            return "PM-KISAN status service is currently unavailable. Please try again later."
+
+        return response.text.strip() or "PM-KISAN status returned an empty response."
+
+    except httpx.TimeoutException:
+        logger.error("PM-KISAN status API timed out")
+        return "PM-KISAN request timed out. Please try again later."
+    except httpx.RequestError as e:
+        logger.error("PM-KISAN status API request failed: %s", e)
+        return f"PM-KISAN request failed: {e!s}"
+    except Exception as e:
+        logger.error("Unexpected error in PM-KISAN status: %s", e)
+        raise ModelRetry(f"Unexpected error in PM-KISAN status. {e!s}") from e
+
+
+# -----------------------
+# SMAM Application Status (single search step)
+# -----------------------
+
+class SMAMStatusRequest(BaseModel):
+    """Search request for SMAM application status by application number."""
+
+    application_number: str
+    search_type: str = "application_no"
+
+    def get_payload(self) -> Dict[str, Any]:
+        now = datetime.now()
+        return {
+            "context": {
+                "domain": "advisory:mh-vistaar",
+                "action": "search",
+                "version": "1.1.0",
+                "bap_id": os.getenv("BAP_ID"),
+                "bap_uri": os.getenv("BAP_URI"),
+                "message_id": str(uuid.uuid4()),
+                "transaction_id": str(uuid.uuid4()),
+                "timestamp": now.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+                "location": {"country": {"name": "India", "code": "IND"}},
+            },
+            "message": {
+                "intent": {
+                    "provider": {
+                        "id": "smam",
+                        "descriptor": {"code": "smam"},
+                    },
+                    "item": {
+                        "descriptor": {"code": "application_status"},
+                        "tags": [
+                            {
+                                "descriptor": {"code": "search_params"},
+                                "list": [
+                                    {
+                                        "descriptor": {"code": "search_type"},
+                                        "value": self.search_type,
+                                    },
+                                    {
+                                        "descriptor": {"code": "search_value"},
+                                        "value": self.application_number,
+                                    },
+                                ],
+                            }
+                        ],
+                    },
+                }
+            },
+        }
+
+
+@observe(name="tool:smam_application_status", as_type="tool")
+async def smam_application_status(application_number: str) -> str:
+    """Fetch SMAM (Sub Mission on Agriculture Mechanization) application status by application number.
+
+    Use this when the farmer asks for the status of their SMAM application.
+
+    Args:
+        application_number: SMAM application number (e.g. UK000082623/2025-26/1)
+
+    Returns:
+        SMAM application status details or an error message.
+    """
+    application_number = (application_number or "").strip()
+    if not application_number:
+        raise ModelRetry("Ask the farmer for their SMAM application number before calling this tool.")
+
+    try:
+        payload = SMAMStatusRequest(application_number=application_number).get_payload()
+        logger.info("Beckn [smam/search] request payload: %s", json.dumps(payload, ensure_ascii=False))
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(os.getenv("BAP_ENDPOINT"), json=payload, timeout=30.0)
+
+        if response.status_code != 200:
+            logger.error("SMAM status API returned %s: %s", response.status_code, response.text[:300])
+            return "SMAM status service is currently unavailable. Please try again later."
+
+        return response.text.strip() or "SMAM status returned an empty response."
+
+    except httpx.TimeoutException:
+        logger.error("SMAM status API timed out")
+        return "SMAM request timed out. Please try again later."
+    except httpx.RequestError as e:
+        logger.error("SMAM status API request failed: %s", e)
+        return f"SMAM request failed: {e!s}"
+    except Exception as e:
+        logger.error("Unexpected error in SMAM status: %s", e)
+        raise ModelRetry(f"Unexpected error in SMAM status. {e!s}") from e

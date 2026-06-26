@@ -1,3 +1,4 @@
+import json
 import os
 import uuid
 from datetime import datetime
@@ -400,7 +401,8 @@ async def fetch_agristack_data(ctx: RunContext[FarmerContext]) -> str:
 
     try:
         payload = AgristackRequest(farmer_id=farmer_id).get_payload()
-        
+        logger.info("Beckn [advisory:mh-vistaar/agristack] request payload: %s", json.dumps(payload, ensure_ascii=False))
+
         async with httpx.AsyncClient() as client:
             response = await client.post(os.getenv("BAP_ENDPOINT"), json=payload, timeout=15.0)
 

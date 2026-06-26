@@ -119,6 +119,7 @@ async def stream_chat_messages(
             deps = FarmerContext(
                 query=query,
                 lang_code=target_lang,
+                session_id=session_id,
                 farmer_id=user_info.get("farmer_id"),
             )
 

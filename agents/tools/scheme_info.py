@@ -17,6 +17,7 @@ with open('assets/scheme_list.json', 'r', encoding='utf-8') as _f:
 _scheme_codes_set = {s["scheme_code"] for s in SCHEME_LIST}
 STATE_SCHEMES = {s["scheme_code"] for s in SCHEME_LIST if s.get("type") == "state"}
 CENTRAL_SCHEMES = {s["scheme_code"] for s in SCHEME_LIST if s.get("type") == "central"}
+BHARAT_VISTAAR_SCHEMES = {s["scheme_code"] for s in SCHEME_LIST if s.get("type") == "bharat_vistaar"}
 
 # -----------------------
 # Basic Models
@@ -245,8 +246,8 @@ class SchemeRequest(BaseModel):
                 "version": "1.1.0",
                 "bap_id": os.getenv("BAP_ID"),
                 "bap_uri": os.getenv("BAP_URI"),
-                "bpp_id": os.getenv("POCRA_BPP_ID"),
-                "bpp_uri": os.getenv("POCRA_BPP_URI"),
+                # "bpp_id": os.getenv("POCRA_BPP_ID"),
+                # "bpp_uri": os.getenv("POCRA_BPP_URI"),
                 "message_id": str(uuid.uuid4()),
                 "transaction_id": str(uuid.uuid4()),
                 "timestamp": now.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
@@ -269,7 +270,7 @@ class SchemeRequest(BaseModel):
 
 @observe(name="tool:get_scheme_codes", as_type="tool")
 async def get_scheme_codes() -> str:
-    """Returns a prioritized list of scheme names and codes with state schemes first.
+    """Returns a prioritized list of scheme names and codes: state schemes first, then central, then Bharat Vistaar cross-network schemes.
 
     Returns:
         str: A markdown-formatted table with scheme names and codes.
@@ -278,6 +279,7 @@ async def get_scheme_codes() -> str:
 
     state_schemes = [scheme_lookup[c] for c in STATE_SCHEMES if c in scheme_lookup]
     central_schemes = [scheme_lookup[c] for c in CENTRAL_SCHEMES if c in scheme_lookup]
+    bharat_vistaar_schemes = [scheme_lookup[c] for c in BHARAT_VISTAAR_SCHEMES if c in scheme_lookup]
 
     markdown_table = "## State Schemes (Maharashtra)\n\n"
     markdown_table += "| Scheme Name | Scheme Code |\n|-------------|-------------|\n"
@@ -287,6 +289,11 @@ async def get_scheme_codes() -> str:
     markdown_table += "\n## Central Schemes\n\n"
     markdown_table += "| Scheme Name | Scheme Code |\n|-------------|-------------|\n"
     for scheme in central_schemes:
+        markdown_table += f"| {scheme['scheme_name']} | {scheme['scheme_code']} |\n"
+
+    markdown_table += "\n## Bharat Vistaar Schemes (Cross-Network)\n\n"
+    markdown_table += "| Scheme Name | Scheme Code |\n|-------------|-------------|\n"
+    for scheme in bharat_vistaar_schemes:
         markdown_table += f"| {scheme['scheme_name']} | {scheme['scheme_code']} |\n"
 
     return markdown_table
@@ -310,7 +317,8 @@ async def get_scheme_info(scheme_code: str) -> str:
             raise ModelRetry(f"Invalid scheme code: {scheme_code}. Use get_scheme_codes() to find valid codes.")
         
         payload = SchemeRequest(scheme_code=scheme_code).get_payload()
-        
+        logger.info("Beckn [advisory:mh-vistaar/scheme-info] request payload: %s", json.dumps(payload, ensure_ascii=False))
+
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 os.getenv("BAP_ENDPOINT"),

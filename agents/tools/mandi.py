@@ -1,3 +1,4 @@
+import json
 import os
 import uuid
 from datetime import datetime, date, timezone
@@ -304,10 +305,11 @@ async def mandi_prices(
     """
     try:
         payload = MandiRequest(
-            latitude=latitude, 
+            latitude=latitude,
             longitude=longitude,
-            ).get_payload()
-        
+        ).get_payload()
+        logger.info("Beckn [advisory:mh-vistaar/mandi] request payload: %s", json.dumps(payload, ensure_ascii=False))
+
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 os.getenv("BAP_ENDPOINT"),
