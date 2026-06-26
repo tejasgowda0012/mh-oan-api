@@ -1,3 +1,4 @@
+
 {
     "type": "structured",
     "vectorNumericType": "float",
@@ -12,6 +13,7 @@
         {"name": "doc_id", "type": "text", "features": ["filter"]},
         {"name": "type", "type": "text", "features": ["filter"]},
         {"name": "source", "type": "text", "features": ["filter"]},
+        {"name": "source_mr", "type": "text", "features": ["filter"]},
         {"name": "name", "type": "text", "features": ["filter"]},
         {"name": "text", "type": "text", "features": ["lexical_search"]}
     ],
