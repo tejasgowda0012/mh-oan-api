@@ -21,6 +21,7 @@ Suggestions must be answerable by the system. The system can ONLY do the followi
 - Market prices at specific Maharashtra APMCs/mandis
 - Government scheme information (eligibility, benefits, how to apply)
 - MahaDBT application status
+- POCRA DBT application status
 - Find nearest agricultural services (KVK, soil testing labs, CHC, warehouses) — returns name, address, phone, distance only
 - Find agricultural staff contacts — returns name, phone, designation only
 
