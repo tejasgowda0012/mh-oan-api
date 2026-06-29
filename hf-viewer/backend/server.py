@@ -346,6 +346,74 @@ def rows(
     }
 
 
+def _row_summary(idx: int, r: dict, columns: list[str], msg_cols: set[str]) -> dict:
+    """Lightweight row metadata for list/search views."""
+    meta: dict[str, Any] = {}
+    for col in columns:
+        val = r.get(col)
+        if col in msg_cols:
+            meta[f"_{col}_turns"] = _count_turns(val)
+        else:
+            meta[col] = val
+    return {"idx": idx, "row": _san(meta)}
+
+
+@app.get("/api/find")
+def find_sessions(
+    dataset: str = Query(...),
+    config: Optional[str] = Query(None),
+    split: str = Query("train"),
+    session_id: str = Query(..., min_length=1, description="Full or partial session_id"),
+    limit: int = Query(25, ge=1, le=100),
+    x_hf_token: Optional[str] = Header(None),
+):
+    """Find conversations by session_id (case-insensitive substring match)."""
+    token = _resolve_token(x_hf_token)
+    name = _normalize_dataset(dataset)
+    needle = session_id.strip().lower()
+    if not needle:
+        raise HTTPException(status_code=400, detail="session_id query is empty")
+
+    matches: list[dict] = []
+
+    local = _local_path(name)
+    if local.exists():
+        rows, columns, msg_cols_list = _load_local(local)
+        msg_cols = set(msg_cols_list)
+        for idx, r in enumerate(rows):
+            sid = str(r.get("session_id", ""))
+            if needle in sid.lower():
+                matches.append(_row_summary(idx, r, columns, msg_cols))
+                if len(matches) >= limit:
+                    break
+        return {
+            "query": session_id,
+            "num_matches": len(matches),
+            "truncated": len(matches) >= limit,
+            "matches": matches,
+            "source": "local",
+        }
+
+    ds = _get_dataset(name, config, split, token)
+    msg_cols = set(_detect_message_columns(ds))
+    columns = list(ds.column_names)
+    for idx in range(len(ds)):
+        r = ds[idx]
+        sid = str(r.get("session_id", ""))
+        if needle in sid.lower():
+            matches.append(_row_summary(idx, r, columns, msg_cols))
+            if len(matches) >= limit:
+                break
+
+    return {
+        "query": session_id,
+        "num_matches": len(matches),
+        "truncated": len(matches) >= limit,
+        "matches": matches,
+        "source": "hub",
+    }
+
+
 @app.get("/api/row")
 def row(
     dataset: str = Query(...),

@@ -7,6 +7,7 @@ import { apiDelete, apiFetch, buildQuery } from "@/lib/api";
 import type { DatasetMeta, RowsResponse } from "@/lib/types";
 import { DatasetLoader } from "@/components/dataset-loader";
 import { ConversationTable } from "@/components/conversation-table";
+import { SessionIdSearch } from "@/components/session-id-search";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 const DEFAULT_DATASET = "kenpath/mh-synthetic-v1";
@@ -234,6 +235,8 @@ export default function HomePage() {
                 </span>
               )}
             </div>
+
+            <SessionIdSearch meta={meta} onOpen={openConversation} />
 
             {rowsLoading && !rows ? (
               <div className="flex justify-center py-12">
