@@ -54,7 +54,7 @@ async def create_suggestions(
 
         message_pairs = "\n\n".join(format_message_pairs(history, 5))
         target_lang_name = Language.get(target_lang).display_name(target_lang)
-        message = f"**Conversation**\n\n{message_pairs}\n\n**Based on the conversation, suggest 3-5 questions the farmer can ask in {target_lang_name}.**"
+        message = f"**Conversation**\n\n{message_pairs}\n\n**Suggest exactly 1 NEW follow-up tap-chip question in {target_lang_name} — short, casual, 4–7 words, concrete farm action. No I/you/your, no 'in your area', no vague 'safe to plant' questions. Something the farmer has NOT already asked.**"
 
         lf_env = os.getenv("LANGFUSE_TRACING_ENVIRONMENT", "development")
         trace_tags = [
@@ -85,7 +85,7 @@ async def create_suggestions(
                 lf_set_trace_io(input=message if len(message) <= 2000 else f"{message[:1997]}...")
                 deps = FarmerContext(query=message, lang_code=target_lang)
                 agent_run = await suggestions_agent.run(message, deps=deps)
-                suggestions = [x for x in agent_run.output]
+                suggestions = [agent_run.output] if agent_run.output else []
                 lf_set_trace_io(output=suggestions)
 
         logger.info(f"Suggestions: {suggestions}")
