@@ -7,8 +7,6 @@ from agents.tools.mandi import mandi_prices
 from agents.tools.agri_services import agri_services
 from agents.tools.maps import reverse_geocode, forward_geocode  
 from agents.tools.agristack import fetch_agristack_data
-from agents.tools.mahadbt import get_scheme_status
-from agents.tools.pocra_dbt import get_pocra_dbt_status
 from agents.tools.terms import search_terms
 from agents.tools.scheme_info import get_scheme_codes, get_scheme_info
 from agents.tools.staff_contact import contact_agricultural_staff
@@ -17,6 +15,8 @@ from agents.tools.pest_detection import (
 )
 # from agents.tools.bharat_vistaar import call_bharat_vistaar_network
 from agents.tools.cross_network import (
+    get_pocra_dbt_status,
+    get_scheme_status,
     pmkisan_installment_init,
     pmkisan_installment_status,
     smam_application_status,

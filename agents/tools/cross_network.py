@@ -6,8 +6,9 @@ Cross-network scheme status
 
 import json
 import os
+import re
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from helpers.utils import get_logger
 import httpx
 from pydantic import BaseModel, AnyHttpUrl, Field
@@ -489,70 +490,154 @@ class SchemeStatusRequest(BaseModel):
             "message": {"intent": {"category": {"descriptor": {"code": "farmer-details-info"}}, "item": {"id": self.farmer_id}}},
         }
 
-@observe(name="tool:get_scheme_status",as_type="tool")
+@observe(name="tool:get_scheme_status", as_type="tool")
 async def get_scheme_status(ctx: RunContext[FarmerContext]) -> str:
-    """Fetch a summary of the farmer's scheme applications and their status. Returns application status, disbursement information, and scheme details."""
-    if ctx.deps.farmer_id:
-        farmer_id = ctx.deps.farmer_id
-    else:
-        return "Farmer ID is not available in the context. Please register with your farmer ID."
+    """Fetch MahaDBT scheme application status for the logged-in farmer via cross-network.
+
+    Use only when the farmer clearly wants MahaDBT / state scheme status — not POCRA DBT.
+    If they only say "DBT status" without specifying, ask whether they mean MahaDBT or POCRA DBT first.
+
+    Returns application status, disbursement information, and scheme details.
+    The farmer is identified automatically from the login token (farmer_id or registration number).
+    """
+    farmer_id = await _resolve_farmer_id_from_context(ctx)
+    if not farmer_id:
+        return (
+            "Farmer ID is not available in the context. "
+            "MahaDBT scheme status is only available for logged-in farmers with Agristack registration."
+        )
 
     try:
         payload = SchemeStatusRequest(farmer_id=farmer_id).get_payload()
-        logger.info("Beckn [mahadbt:mh-vistaar] request payload: %s", json.dumps(payload, ensure_ascii=False))
+        endpoint = _bap_action_url("search")
+        logger.info("Beckn [mahadbt/search] URL: %s", endpoint)
+        logger.info(
+            "Beckn [mahadbt/search] payload: %s",
+            json.dumps(payload, ensure_ascii=False),
+        )
 
         async with httpx.AsyncClient() as client:
-            response = await client.post(os.getenv("BAP_ENDPOINT"), json=payload, timeout=15.0)
+            response = await client.post(endpoint, json=payload, timeout=15.0)
 
         if response.status_code != 200:
-            logger.error(f"Scheme status API returned status code {response.status_code}")
+            logger.error("Scheme status API returned status code %s", response.status_code)
             return "Scheme status information service is currently unavailable. Please try again later."
 
         scheme_response = SchemeStatusResponse.model_validate(response.json())
         return str(scheme_response)
 
     except httpx.TimeoutException as e:
-        logger.error(f"Scheme status API request timed out: {str(e)}")
+        logger.error("Scheme status API request timed out: %s", e)
         return "Scheme status request timed out. Please try again later."
 
     except httpx.RequestError as e:
-        logger.error(f"Scheme status API request failed: {e}")
+        logger.error("Scheme status API request failed: %s", e)
         return f"Scheme status request failed: {str(e)}"
 
-    except UnexpectedModelBehavior as e:
+    except UnexpectedModelBehavior:
         logger.warning("Scheme status request exceeded retry limit")
         return "Sorry, the scheme status information is temporarily unavailable. Please try again later."
 
     except Exception as e:
-        logger.error(f"Error getting scheme status: {e}")
-        raise ModelRetry(f"Unexpected error in scheme status request. {str(e)}")
+        logger.error("Error getting scheme status: %s", e)
+        raise ModelRetry(f"Unexpected error in scheme status request. {str(e)}") from e
 
 
 # -----------------------
-# PM-KISAN Installment Status (2-step: init → status)
+# PM-KISAN Installment Status (2-step: /init → /status)
+# Uses MH middleware domain advisory:mh-vistaar (not schemes:vistaar)
 # -----------------------
+
+def _bap_action_url(action: str) -> str:
+    """Resolve BAP URL for init/status/search actions."""
+    base = (os.getenv("BAP_BASE_URL") or "").strip().rstrip("/")
+    if not base:
+        endpoint = (os.getenv("BAP_ENDPOINT") or "").strip().rstrip("/")
+        if endpoint.endswith("/search"):
+            base = endpoint[: -len("/search")]
+        else:
+            base = endpoint
+    if not base:
+        raise ValueError("BAP_BASE_URL or BAP_ENDPOINT is not configured")
+    return f"{base}/{action.lstrip('/')}"
+
+
+def _generate_pmkisan_transaction_id(session_id: str, identifier: str) -> str:
+    """Stable transaction id across init and status for the same farmer identifier."""
+    return str(uuid.uuid5(uuid.NAMESPACE_DNS, session_id + identifier))
+
+
+def _normalize_pmkisan_identifier(reg_no: str = "", phone_number: str = "") -> tuple[str, str]:
+    input_val = (reg_no or phone_number).strip().upper().replace(" ", "")
+    if not input_val:
+        return "", ""
+    if re.fullmatch(r"\d{10}", input_val):
+        return "", input_val
+    return input_val, ""
+
+
+def _pmkisan_beckn_context(*, transaction_id: str, action: str) -> Dict[str, Any]:
+    """MH BAP middleware requires advisory:mh-vistaar and bpp_id/bpp_uri for init/status."""
+    now = datetime.now(timezone.utc)
+    bpp_id = (os.getenv("BHARAT_VISTAAR_BPP_ID") or "").strip()
+    bpp_uri = (os.getenv("BHARAT_VISTAAR_BPP_URI") or "").strip()
+    context: Dict[str, Any] = {
+        "domain": "advisory:mh-vistaar",
+        "action": action,
+        "version": "1.1.0",
+        "bap_id": os.getenv("BAP_ID"),
+        "bap_uri": os.getenv("BAP_URI"),
+        "bpp_id": bpp_id,
+        "bpp_uri": bpp_uri,
+        "transaction_id": transaction_id,
+        "message_id": str(uuid.uuid4()),
+        "timestamp": str(int(now.timestamp())),
+        "ttl": "PT10M",
+        "location": {"country": {"code": "IND"}, "city": {"code": "*"}},
+    }
+    return context
+
+
+def _beckn_response_ok(response: httpx.Response) -> tuple[bool, str]:
+    """Return whether a Beckn BAP response is successful and an error hint if not."""
+    if response.status_code not in (200, 202):
+        return False, response.text[:300]
+
+    text = response.text.strip()
+    if not text:
+        return False, "empty response body"
+
+    try:
+        data = response.json()
+    except json.JSONDecodeError:
+        return True, ""
+
+    ack_status = (data.get("message") or {}).get("ack", {}).get("status")
+    if ack_status == "NACK":
+        error = data.get("error") or {}
+        return False, error.get("message") or "request rejected by network (NACK)"
+
+    if data.get("error"):
+        error = data["error"]
+        return False, error.get("message") or str(error)
+
+    return True, ""
+
 
 class PMKISANInitRequest(BaseModel):
-    """Step 1 — init: send registration number to get an order_id (OTP flow)."""
+    """Step 1 — POST /init: send registration number or phone to trigger OTP."""
 
+    transaction_id: str
     registration_number: str
-    customer_name: str = ""
-    phone: str = ""
+    phone_number: str = ""
 
     def get_payload(self) -> Dict[str, Any]:
-        now = datetime.now()
+        identifier = self.registration_number or self.phone_number
         return {
-            "context": {
-                "domain": "advisory:mh-vistaar",
-                "action": "init",
-                "version": "1.1.0",
-                "bap_id": os.getenv("BAP_ID"),
-                "bap_uri": os.getenv("BAP_URI"),
-                "message_id": str(uuid.uuid4()),
-                "transaction_id": str(uuid.uuid4()),
-                "timestamp": now.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
-                "location": {"country": {"name": "India", "code": "IND"}},
-            },
+            "context": _pmkisan_beckn_context(
+                transaction_id=self.transaction_id,
+                action="init",
+            ),
             "message": {
                 "order": {
                     "provider": {"id": ""},
@@ -561,7 +646,7 @@ class PMKISANInitRequest(BaseModel):
                         {
                             "customer": {
                                 "person": {
-                                    "name": self.customer_name,
+                                    "name": "Customer Name",
                                     "tags": [
                                         {
                                             "display": True,
@@ -575,14 +660,14 @@ class PMKISANInitRequest(BaseModel):
                                                         "name": "Registration Number",
                                                         "code": "reg-number",
                                                     },
-                                                    "value": self.registration_number,
+                                                    "value": identifier,
                                                     "display": True,
                                                 }
                                             ],
                                         }
                                     ],
                                 },
-                                "contact": {"phone": self.phone},
+                                "contact": {"phone": ""},
                             }
                         }
                     ],
@@ -592,74 +677,123 @@ class PMKISANInitRequest(BaseModel):
 
 
 class PMKISANStatusRequest(BaseModel):
-    """Step 2 — status: submit order_id (OTP) + registration number to get installment status."""
+    """Step 2 — POST /status: submit the 4-digit SMS OTP to fetch installment status."""
 
-    order_id: str
+    transaction_id: str
+    otp: str
     registration_number: str
     phone_number: str = ""
 
     def get_payload(self) -> Dict[str, Any]:
-        now = datetime.now()
+        identifier = self.registration_number or self.phone_number
         return {
-            "context": {
-                "domain": "advisory:mh-vistaar",
-                "action": "status",
-                "version": "1.1.0",
-                "bap_id": os.getenv("BAP_ID"),
-                "bap_uri": os.getenv("BAP_URI"),
-                "message_id": str(uuid.uuid4()),
-                "transaction_id": str(uuid.uuid4()),
-                "timestamp": now.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
-                "location": {"country": {"name": "India", "code": "IND"}},
-            },
+            "context": _pmkisan_beckn_context(
+                transaction_id=self.transaction_id,
+                action="status",
+            ),
             "message": {
-                "order_id": self.order_id,
-                "registration_number": self.registration_number,
-                "phone_number": self.phone_number,
+                "order_id": self.otp,
+                "registration_number": identifier,
+                "phone_number": "",
             },
         }
+
+
+def _format_pmkisan_init_response(data: Dict[str, Any]) -> str:
+    lines: list[str] = []
+    for block in data.get("responses") or []:
+        order = (block.get("message") or {}).get("order") or {}
+        for item in order.get("items") or []:
+            for tag in item.get("tags") or []:
+                descriptor = tag.get("descriptor") or {}
+                if descriptor.get("short_desc"):
+                    lines.append(descriptor["short_desc"])
+                for tag_item in tag.get("list") or []:
+                    value = tag_item.get("value")
+                    if value:
+                        lines.append(str(value))
+    return "\n".join(lines) if lines else "OTP request processed. Please check your mobile for the OTP."
+
+
+def _format_pmkisan_status_response(data: Dict[str, Any]) -> str:
+    lines: list[str] = []
+    for block in data.get("responses") or []:
+        order = (block.get("message") or {}).get("order") or {}
+        if order.get("state"):
+            lines.append(f"State: **{order['state']}**")
+        provider = order.get("provider") or {}
+        provider_name = (provider.get("descriptor") or {}).get("name") or provider.get("id")
+        if provider_name:
+            lines.append(f"Provider: **{provider_name}**")
+        for fulfillment in order.get("fulfillments") or []:
+            state = fulfillment.get("state") or {}
+            descriptor = state.get("descriptor") or {}
+            if descriptor.get("name"):
+                lines.append(f"Status: {descriptor['name']}")
+            if descriptor.get("short_desc"):
+                lines.append(descriptor["short_desc"])
+            if descriptor.get("long_desc"):
+                lines.append(f"\nDetails:\n\n{descriptor['long_desc']}")
+        for tag in order.get("tags") or []:
+            descriptor = tag.get("descriptor") or {}
+            if descriptor.get("short_desc"):
+                lines.append(descriptor["short_desc"])
+    return "\n".join(lines) if lines else "No PM-KISAN status data available."
 
 
 @observe(name="tool:pmkisan_installment_init", as_type="tool")
 async def pmkisan_installment_init(
     ctx: RunContext[FarmerContext],
-    registration_number: str,
-    customer_name: str = "",
-    phone: str = "",
+    registration_number: str = "",
+    phone_number: str = "",
 ) -> str:
-    """Step 1 of PM-KISAN installment status — submit the farmer's registration number to initiate the OTP flow.
+    """Step 1 of PM-KISAN installment status — send OTP to the farmer's registered mobile.
 
     Call this first when the farmer asks for PM-KISAN installment/beneficiary status.
-    The response contains an order_id which must be passed to `pmkisan_installment_status` in the next step.
+    Do NOT call this again after the farmer shares their OTP — use `pmkisan_installment_status` instead.
 
     Args:
-        registration_number: PM-KISAN registration number
-        customer_name: Farmer's name (optional, leave blank if unknown)
-        phone: Farmer's phone number (optional)
+        registration_number: PM-KISAN registration number (11-digit). Leave empty if phone_number is provided.
+        phone_number: Farmer's registered 10-digit mobile number. Leave empty if registration_number is provided.
 
     Returns:
-        order_id to use in the next step, or an error message.
+        Confirmation that OTP was sent, or an error message.
     """
-    registration_number = (registration_number or "").strip()
-    if not registration_number:
-        raise ModelRetry("Ask the farmer for their PM-KISAN registration number before calling this tool.")
+    reg_no, phone = _normalize_pmkisan_identifier(registration_number, phone_number)
+    if not reg_no and not phone:
+        raise ModelRetry(
+            "Ask the farmer for their PM-KISAN registration number or registered mobile number."
+        )
 
     try:
+        identifier = reg_no or phone
+        transaction_id = _generate_pmkisan_transaction_id(ctx.deps.session_id, identifier)
         payload = PMKISANInitRequest(
-            registration_number=registration_number,
-            customer_name=customer_name,
-            phone=phone,
+            transaction_id=transaction_id,
+            registration_number=reg_no,
+            phone_number=phone,
         ).get_payload()
-        logger.info("Beckn [pmkisan/init] request payload: %s", json.dumps(payload, ensure_ascii=False))
+        endpoint = _bap_action_url("init")
+        logger.info("Beckn [pmkisan/init] URL: %s", endpoint)
+        logger.info("Beckn [pmkisan/init] payload: %s", json.dumps(payload, ensure_ascii=False))
 
         async with httpx.AsyncClient() as client:
-            response = await client.post(os.getenv("BAP_ENDPOINT"), json=payload, timeout=30.0)
+            response = await client.post(endpoint, json=payload, timeout=30.0)
 
-        if response.status_code != 200:
-            logger.error("PM-KISAN init API returned %s: %s", response.status_code, response.text[:300])
+        logger.info("Beckn [pmkisan/init] status: %s body: %s", response.status_code, response.text[:500])
+        ok, err_hint = _beckn_response_ok(response)
+        if not ok:
+            logger.error("PM-KISAN init API failed: %s", err_hint)
             return "PM-KISAN status service is currently unavailable. Please try again later."
 
-        return response.text.strip() or "PM-KISAN init returned an empty response."
+        response_text = response.text.strip()
+        if not response_text:
+            return "PM-KISAN init returned an empty response. Please try again later."
+
+        try:
+            return _format_pmkisan_init_response(response.json())
+        except json.JSONDecodeError:
+            return response_text
 
     except httpx.TimeoutException:
         logger.error("PM-KISAN init API timed out")
@@ -675,45 +809,63 @@ async def pmkisan_installment_init(
 @observe(name="tool:pmkisan_installment_status", as_type="tool")
 async def pmkisan_installment_status(
     ctx: RunContext[FarmerContext],
-    order_id: str,
-    registration_number: str,
+    otp: str,
+    registration_number: str = "",
     phone_number: str = "",
 ) -> str:
-    """Step 2 of PM-KISAN installment status — submit the OTP (order_id from init step) to fetch live installment details.
+    """Step 2 of PM-KISAN installment status — verify OTP and fetch live installment details.
 
-    Call this after `pmkisan_installment_init` once the farmer provides the OTP they received.
+    Call this after `pmkisan_installment_init` once the farmer provides the 4-digit OTP received via SMS.
+    Never call `pmkisan_installment_init` when the farmer shares an OTP.
 
     Args:
-        order_id: OTP or order_id returned by `pmkisan_installment_init`
-        registration_number: Same PM-KISAN registration number used in init
-        phone_number: Farmer's phone number (optional)
+        otp: 4-digit OTP received via SMS on the farmer's registered mobile
+        registration_number: Same PM-KISAN registration number used in init. Leave empty if phone_number was used.
+        phone_number: Same registered mobile number used in init. Leave empty if registration_number was used.
 
     Returns:
         PM-KISAN installment status details or an error message.
     """
-    order_id = (order_id or "").strip()
-    registration_number = (registration_number or "").strip()
-    if not order_id:
-        raise ModelRetry("Ask the farmer for the OTP they received before calling this tool.")
-    if not registration_number:
-        raise ModelRetry("Registration number is required. Ask the farmer for their PM-KISAN registration number.")
+    reg_no, phone = _normalize_pmkisan_identifier(registration_number, phone_number)
+    if not reg_no and not phone:
+        raise ModelRetry(
+            "Registration number or phone number is required. Ask the farmer for the same identifier used in step 1."
+        )
+
+    otp_clean = str(otp).strip()
+    if not otp_clean.isdigit() or len(otp_clean) != 4:
+        raise ModelRetry("Invalid OTP format. Please provide the 4-digit OTP received via SMS.")
 
     try:
+        identifier = reg_no or phone
+        transaction_id = _generate_pmkisan_transaction_id(ctx.deps.session_id, identifier)
         payload = PMKISANStatusRequest(
-            order_id=order_id,
-            registration_number=registration_number,
-            phone_number=phone_number,
+            transaction_id=transaction_id,
+            otp=otp_clean,
+            registration_number=reg_no,
+            phone_number=phone,
         ).get_payload()
-        logger.info("Beckn [pmkisan/status] request payload: %s", json.dumps(payload, ensure_ascii=False))
+        endpoint = _bap_action_url("status")
+        logger.info("Beckn [pmkisan/status] URL: %s", endpoint)
+        logger.info("Beckn [pmkisan/status] payload: %s", json.dumps(payload, ensure_ascii=False))
 
         async with httpx.AsyncClient() as client:
-            response = await client.post(os.getenv("BAP_ENDPOINT"), json=payload, timeout=30.0)
+            response = await client.post(endpoint, json=payload, timeout=30.0)
 
-        if response.status_code != 200:
-            logger.error("PM-KISAN status API returned %s: %s", response.status_code, response.text[:300])
+        logger.info("Beckn [pmkisan/status] status: %s body: %s", response.status_code, response.text[:500])
+        ok, err_hint = _beckn_response_ok(response)
+        if not ok:
+            logger.error("PM-KISAN status API failed: %s", err_hint)
             return "PM-KISAN status service is currently unavailable. Please try again later."
 
-        return response.text.strip() or "PM-KISAN status returned an empty response."
+        response_text = response.text.strip()
+        if not response_text:
+            return "PM-KISAN status returned an empty response. Please try again later."
+
+        try:
+            return _format_pmkisan_status_response(response.json())
+        except json.JSONDecodeError:
+            return response_text
 
     except httpx.TimeoutException:
         logger.error("PM-KISAN status API timed out")
@@ -797,10 +949,12 @@ async def smam_application_status(application_number: str) -> str:
 
     try:
         payload = SMAMStatusRequest(application_number=application_number).get_payload()
+        endpoint = _bap_action_url("search")
+        logger.info("Beckn [smam/search] URL: %s", endpoint)
         logger.info("Beckn [smam/search] request payload: %s", json.dumps(payload, ensure_ascii=False))
 
         async with httpx.AsyncClient() as client:
-            response = await client.post(os.getenv("BAP_ENDPOINT"), json=payload, timeout=30.0)
+            response = await client.post(endpoint, json=payload, timeout=30.0)
 
         if response.status_code != 200:
             logger.error("SMAM status API returned %s: %s", response.status_code, response.text[:300])
@@ -817,3 +971,173 @@ async def smam_application_status(application_number: str) -> str:
     except Exception as e:
         logger.error("Unexpected error in SMAM status: %s", e)
         raise ModelRetry(f"Unexpected error in SMAM status. {e!s}") from e
+
+
+# -----------------------
+# POCRA DBT Application Status (logged-in farmer via cross-network)
+# -----------------------
+
+def _extract_farmer_id_from_agristack_payload(data: Dict[str, Any]) -> Optional[str]:
+    """Parse farmer_id from an agristack_farmer_info Beckn response."""
+    for block in data.get("responses") or []:
+        catalog = (block.get("message") or {}).get("catalog") or {}
+        for provider in catalog.get("providers") or []:
+            for item in provider.get("items") or []:
+                item_id = str(item.get("id") or "")
+                if item_id.startswith("farmer-"):
+                    return item_id.removeprefix("farmer-")
+                if item_id.isdigit():
+                    return item_id
+                for tag in item.get("tags") or []:
+                    code = tag.get("code") or (tag.get("descriptor") or {}).get("code")
+                    if code in {"farmer_id", "agristack_farmerid"} and tag.get("value"):
+                        return str(tag["value"])
+    return None
+
+
+async def _lookup_farmer_id_via_agristack(registration_number: str) -> Optional[str]:
+    """Resolve Agristack farmer_id from a registration number via cross-network search."""
+    now = datetime.now()
+    payload = {
+        "context": {
+            "domain": "advisory:mh-vistaar",
+            "action": "search",
+            "version": "1.1.0",
+            "bap_id": os.getenv("BAP_ID"),
+            "bap_uri": os.getenv("BAP_URI"),
+            "bpp_id": os.getenv("POCRA_BPP_ID"),
+            "bpp_uri": os.getenv("POCRA_BPP_URI"),
+            "location": {"country": {"name": "India", "code": "IND"}},
+            "transaction_id": str(uuid.uuid4()),
+            "message_id": str(uuid.uuid4()),
+            "timestamp": now.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+        },
+        "message": {
+            "intent": {
+                "category": {"descriptor": {"code": "agristack_farmer_info"}},
+                "item": {"id": registration_number},
+            }
+        },
+    }
+    endpoint = _bap_action_url("search")
+    logger.info(
+        "Beckn [agristack/lookup] registration=%s URL: %s",
+        registration_number,
+        endpoint,
+    )
+
+    async with httpx.AsyncClient() as client:
+        response = await client.post(endpoint, json=payload, timeout=15.0)
+
+    if response.status_code != 200:
+        logger.error("Agristack lookup returned %s: %s", response.status_code, response.text[:300])
+        return None
+
+    try:
+        return _extract_farmer_id_from_agristack_payload(response.json())
+    except json.JSONDecodeError:
+        logger.error("Agristack lookup returned non-JSON body")
+        return None
+
+
+async def _resolve_farmer_id_from_context(ctx: RunContext[FarmerContext]) -> Optional[str]:
+    """Use JWT farmer_id, or resolve from registration number (unique_id) via Agristack."""
+    if ctx.deps.farmer_id:
+        return str(ctx.deps.farmer_id).strip()
+
+    registration_number = (ctx.deps.unique_id or "").strip()
+    if not registration_number:
+        return None
+
+    farmer_id = await _lookup_farmer_id_via_agristack(registration_number)
+    if farmer_id:
+        ctx.deps.update_farmer_id(farmer_id)
+        logger.info(
+            "Resolved farmer_id=%s from registration=%s",
+            farmer_id,
+            registration_number,
+        )
+    return farmer_id
+
+
+@observe(name="tool:get_pocra_dbt_status", as_type="tool")
+async def get_pocra_dbt_status(
+    ctx: RunContext[FarmerContext],
+    application_id: Optional[str] = None,
+) -> str:
+    """Fetch POCRA DBT application status for the logged-in farmer via cross-network.
+
+    Use only when the farmer clearly wants POCRA DBT status — not MahaDBT.
+    If they only say "DBT status" without specifying, ask whether they mean MahaDBT or POCRA DBT first.
+
+    The farmer is identified automatically from the login token (farmer_id or registration number).
+    Each farmer may have multiple DBT applications.
+
+    Before calling this tool for the first time in a conversation, ask the farmer:
+    - whether they want a summary of **all** their POCRA DBT applications, or
+    - the status of one **specific application** (they must share the complete application
+      number from their receipt, SMS, or portal — never refer to masked "***" placeholders).
+
+    Args:
+        application_id: Full POCRA DBT application number for a single-application lookup.
+            Omit when the farmer wants all applications.
+
+    Returns:
+        POCRA DBT application status summary or details.
+    """
+    from agents.tools.pocra_dbt import PocraDBTRequest, PocraDBTResponse
+
+    farmer_id = await _resolve_farmer_id_from_context(ctx)
+    if not farmer_id:
+        return (
+            "Farmer ID is not available in the context. "
+            "POCRA DBT status is only available for logged-in farmers with Agristack registration."
+        )
+
+    if application_id is not None:
+        resolved_application_id = str(application_id).strip() or None
+    else:
+        resolved_application_id = None
+
+    try:
+        logger.info(
+            "POCRA DBT: calling network API for farmer_id=%s application_id=%s",
+            farmer_id,
+            resolved_application_id,
+        )
+        payload = PocraDBTRequest(
+            farmer_id=farmer_id,
+            application_id=resolved_application_id,
+        ).get_payload()
+        endpoint = _bap_action_url("search")
+        logger.info("Beckn [pocra-dbt/search] URL: %s", endpoint)
+        logger.info(
+            "Beckn [pocra-dbt/search] payload: %s",
+            json.dumps(payload, ensure_ascii=False),
+        )
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(endpoint, json=payload, timeout=15.0)
+
+        if response.status_code != 200:
+            logger.error("POCRA DBT API returned status code %s", response.status_code)
+            return "POCRA DBT application status service is currently unavailable. Please try again later."
+
+        dbt_response = PocraDBTResponse.model_validate(response.json())
+        return dbt_response.format_status(application_id=resolved_application_id)
+
+    except httpx.TimeoutException as e:
+        logger.error("POCRA DBT API request timed out: %s", e)
+        return "POCRA DBT application status request timed out. Please try again later."
+
+    except httpx.RequestError as e:
+        logger.error("POCRA DBT API request failed: %s", e)
+        return f"POCRA DBT application status request failed: {str(e)}"
+
+    except UnexpectedModelBehavior:
+        logger.warning("POCRA DBT request exceeded retry limit")
+        return "Sorry, POCRA DBT application status information is temporarily unavailable. Please try again later."
+
+    except Exception as e:
+        logger.error("Error getting POCRA DBT application status: %s", e)
+        raise ModelRetry(f"Unexpected error in POCRA DBT application status request. {str(e)}") from e

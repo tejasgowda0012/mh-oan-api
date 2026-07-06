@@ -388,11 +388,19 @@ class AgristackRequest(BaseModel):
 
 @observe(name="tool:fetch_agristack_data", as_type="tool")
 async def fetch_agristack_data(ctx: RunContext[FarmerContext]) -> str:
-    """If Agristack Information is available for the user, use this tool to fetch it. This tool returns details of the farmer from the Agristack API, for instance:
-        - Profile information such as Gender, Caste Category
-        - Location information such as Village, Taluka, District, LGD Codes, and GPS Coordinates
-        - Farm details such as Total Plot Area.
-        - Masked PII information such as Name, Mobile, Date of Birth.
+    """Fetch Agristack farmer profile and GPS coordinates for personalization.
+
+    Use ONLY when you need profile, village, land area, or coordinates for weather,
+    mandi, services, staff, or crop advisory personalization.
+
+    Do NOT call this for:
+    - MahaDBT scheme status (`get_scheme_status`)
+    - POCRA DBT status (`get_pocra_dbt_status`)
+    - PM-KISAN or SMAM status
+    Those tools use the logged-in farmer ID from the token automatically — no Agristack
+    profile fetch is required first.
+
+    Returns profile fields (gender, caste, village, plot area), masked PII, and GPS.
     """
     if ctx.deps.farmer_id:
         farmer_id = ctx.deps.farmer_id

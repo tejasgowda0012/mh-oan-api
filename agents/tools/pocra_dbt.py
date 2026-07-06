@@ -8,13 +8,9 @@ import os
 import uuid
 from datetime import datetime
 from helpers.utils import get_logger
-import httpx
 from pydantic import BaseModel, AnyHttpUrl, Field
 from typing import List, Optional, Dict, Any, ClassVar
-from pydantic_ai import ModelRetry, UnexpectedModelBehavior, RunContext
-from agents.deps import FarmerContext
 from dotenv import load_dotenv
-from langfuse import observe
 
 load_dotenv()
 
@@ -66,23 +62,23 @@ class DBTApplication(BaseModel):
     }
 
     STATUS_LABELS: ClassVar[Dict[str, str]] = {
-        "InMeeting": "📋 In Meeting (समिती बैठकीत आहे)",
-        "Approved": "✅ Approved (मंजूर)",
-        "Rejected": "❌ Rejected (नाकारले)",
-        "Pending": "⏳ Pending (प्रलंबित)",
-        "Fund Disbursed": "✅ Fund Disbursed (निधी वितरित)",
-        "Cancelled": "🚫 Cancelled (रद्द)",
+        "InMeeting": "In Meeting",
+        "Approved": "Approved",
+        "Rejected": "Rejected",
+        "Pending": "Pending",
+        "Fund Disbursed": "Fund Disbursed",
+        "Cancelled": "Cancelled",
     }
 
     STAGE_LABELS: ClassVar[Dict[str, str]] = {
-        "GKVS": "GKVS (ग्राम कृषी विकास समिती)",
-        "TKVS": "TKVS (तालुका कृषी विकास समिती)",
-        "DKVS": "DKVS (जिल्हा कृषी विकास समिती)",
+        "GKVS": "Village Level Committee (GKVS)",
+        "TKVS": "Taluka Level Committee (TKVS)",
+        "DKVS": "District Level Committee (DKVS)",
     }
 
     @classmethod
     def format_status_display(cls, status: str) -> str:
-        return cls.STATUS_LABELS.get(status, f"📄 {status}")
+        return cls.STATUS_LABELS.get(status, status)
 
     @classmethod
     def format_stage_display(cls, stage: str) -> str:
@@ -119,22 +115,46 @@ class DBTApplication(BaseModel):
                 continue
         return value
 
-    def to_summary_line(self, mask_pii: bool = True) -> str:
-        activity_name = self._get_tag_value("activity_name") or str(self.descriptor).split(" - ")[0]
+    def _activity_name(self) -> str:
+        return self._get_tag_value("activity_name") or str(self.descriptor).split(" - ")[0]
+
+    def _format_amount(self, value: str) -> str:
+        clean = value.strip()
+        if not clean or clean in {"null", "NA"}:
+            return clean
+        try:
+            amount = float(clean.replace(",", ""))
+            if amount.is_integer():
+                return f"₹{int(amount):,}"
+            return f"₹{amount:,.2f}"
+        except ValueError:
+            return clean
+
+    def to_summary_card(self, index: int, mask_pii: bool = True) -> str:
+        """Numbered card with GFM sub-bullets for the all-applications list view."""
+        activity_name = self._activity_name()
         status = self._get_tag_value("application_status")
         stage = self._get_tag_value("application_stage")
         village = self._get_tag_value("village_name")
         app_id = self._get_tag_value("application_id") or self.id
         masked_app_id = self._format_tag_value("application_id", app_id, mask_pii)
+        app_date = self._get_tag_value("application_date")
+        amount = self._get_tag_value("presanctionamount")
 
-        parts = [f"**{activity_name}**", f"Application ID: {masked_app_id}"]
+        lines = [f"**{index}. {activity_name}**"]
+        bullets: list[str] = [f"- Application ID: {masked_app_id}"]
         if status:
-            parts.append(f"Status: {self.format_status_display(status)}")
+            bullets.append(f"- Status: {self.format_status_display(status)}")
         if stage:
-            parts.append(f"Stage: {self.format_stage_display(stage)}")
+            bullets.append(f"- Stage: {self.format_stage_display(stage)}")
         if village:
-            parts.append(f"Village: {village}")
-        return " | ".join(parts)
+            bullets.append(f"- Village: {village}")
+        if app_date:
+            bullets.append(f"- Applied on: {self._format_date(app_date)}")
+        if amount:
+            bullets.append(f"- Pre-sanction amount: {self._format_amount(amount)}")
+        lines.extend(bullets)
+        return "\n".join(lines)
 
     def matches_application_id(self, application_id: str) -> bool:
         normalized = application_id.strip()
@@ -143,19 +163,18 @@ class DBTApplication(BaseModel):
         tag_app_id = self._get_tag_value("application_id")
         return tag_app_id == normalized
 
-    def __str__(self, mask_pii: bool = True) -> str:
-        lines = []
-        indent_1 = "  "
-
-        activity_name = self._get_tag_value("activity_name") or str(self.descriptor).split(" - ")[0]
+    def to_detail_block(self, mask_pii: bool = True) -> str:
+        """Structured detail block for a single application."""
+        activity_name = self._activity_name()
         status = self._get_tag_value("application_status")
         stage = self._get_tag_value("application_stage")
 
-        lines.append(f"> **{activity_name}**")
+        lines = [f"**{activity_name}**", ""]
+        bullets: list[str] = []
         if status:
-            lines.append(f"{indent_1}Status: {self.format_status_display(status)}")
+            bullets.append(f"- Status: {self.format_status_display(status)}")
         if stage:
-            lines.append(f"{indent_1}Stage: {self.format_stage_display(stage)}")
+            bullets.append(f"- Stage: {self.format_stage_display(stage)}")
 
         priority_info = [
             ("full_name", "Applicant Name"),
@@ -180,11 +199,17 @@ class DBTApplication(BaseModel):
                 continue
             if code.endswith(("_date", "_on")):
                 value = self._format_date(value)
+            elif code == "presanctionamount":
+                value = self._format_amount(value)
             else:
                 value = self._format_tag_value(code, value, mask_pii)
-            lines.append(f"{indent_1}{label}: {value}")
+            bullets.append(f"- {label}: {value}")
 
+        lines.extend(bullets)
         return "\n".join(lines)
+
+    def __str__(self, mask_pii: bool = True) -> str:
+        return self.to_detail_block(mask_pii=mask_pii)
 
 
 class Provider(BaseModel):
@@ -272,7 +297,6 @@ class PocraDBTResponse(BaseModel):
         mask_pii: bool = True,
         application_id: Optional[str] = None,
     ) -> str:
-        lines = ["## POCRA DBT Application Status", ""]
         applications = self._collect_applications()
 
         if application_id:
@@ -280,34 +304,39 @@ class PocraDBTResponse(BaseModel):
                 item for item in applications if item.matches_application_id(application_id)
             ]
             if not applications:
-                lines.append(
-                    f"❌ No POCRA DBT application found with application number {application_id} for this farmer ID."
+                return (
+                    f"No POCRA DBT application found with application number "
+                    f"{application_id} for this farmer."
                 )
-                return "\n".join(lines)
 
-            lines.append("### Application Details:")
-            lines.append("")
-            for item in applications:
-                lines.append(item.__str__(mask_pii=mask_pii))
-                lines.append("")
+            lines: list[str] = []
+            for idx, item in enumerate(applications, start=1):
+                if len(applications) > 1:
+                    lines.append(f"**Application {idx}**")
+                    lines.append("")
+                lines.append(item.to_detail_block(mask_pii=mask_pii))
+                if idx < len(applications):
+                    lines.append("")
+                    lines.append("---")
+                    lines.append("")
             return "\n".join(lines).rstrip()
 
         if not applications:
-            lines.append("❌ No POCRA DBT application information found for the requested farmer ID.")
-            return "\n".join(lines)
+            return "No POCRA DBT application information found for this farmer."
 
-        latest_response = self.responses[-1] if self.responses else None
-        if latest_response and latest_response.message.catalog.descriptor:
-            descriptor = latest_response.message.catalog.descriptor
-            if descriptor.short_desc:
-                lines.append(descriptor.short_desc)
+        count = len(applications)
+        noun = "application" if count == 1 else "applications"
+        lines = [
+            f"You have **{count}** POCRA DBT {noun}.",
+            "",
+        ]
+
+        for idx, item in enumerate(applications, start=1):
+            lines.append(item.to_summary_card(idx, mask_pii=mask_pii))
+            if idx < count:
                 lines.append("")
 
-        lines.append(f"📊 **Summary: {len(applications)} total applications**")
-        lines.append("")
-        for item in applications:
-            lines.append(f"- {item.to_summary_line(mask_pii=mask_pii)}")
-        return "\n".join(lines)
+        return "\n".join(lines).rstrip()
 
     def __str__(self, mask_pii: bool = True) -> str:
         return self.format_status(mask_pii=mask_pii)
@@ -352,54 +381,4 @@ class PocraDBTRequest(BaseModel):
         }
 
 
-@observe(name="tool:get_pocra_dbt_status", as_type="tool")
-async def get_pocra_dbt_status(
-    ctx: RunContext[FarmerContext],
-    application_id: Optional[str] = None,
-) -> str:
-    """Fetch POCRA DBT application status for the logged-in farmer.
 
-    Returns a summary of the farmer's POCRA DBT applications and their status.
-    Pass application_id to get details for one application; omit it to list all applications.
-    """
-    if ctx.deps.farmer_id:
-        farmer_id = ctx.deps.farmer_id
-    else:
-        return "Farmer ID is not available in the context. Please register with your farmer ID."
-
-    if application_id is not None:
-        resolved_application_id = str(application_id).strip() or None
-    else:
-        resolved_application_id = None
-
-    try:
-        payload = PocraDBTRequest(
-            farmer_id=farmer_id,
-            application_id=resolved_application_id,
-        ).get_payload()
-
-        async with httpx.AsyncClient() as client:
-            response = await client.post(os.getenv("BAP_ENDPOINT"), json=payload, timeout=15.0)
-
-        if response.status_code != 200:
-            logger.error(f"POCRA DBT API returned status code {response.status_code}")
-            return "POCRA DBT application status service is currently unavailable. Please try again later."
-
-        dbt_response = PocraDBTResponse.model_validate(response.json())
-        return dbt_response.format_status(application_id=resolved_application_id)
-
-    except httpx.TimeoutException as e:
-        logger.error(f"POCRA DBT API request timed out: {str(e)}")
-        return "POCRA DBT application status request timed out. Please try again later."
-
-    except httpx.RequestError as e:
-        logger.error(f"POCRA DBT API request failed: {e}")
-        return f"POCRA DBT application status request failed: {str(e)}"
-
-    except UnexpectedModelBehavior:
-        logger.warning("POCRA DBT request exceeded retry limit")
-        return "Sorry, POCRA DBT application status information is temporarily unavailable. Please try again later."
-
-    except Exception as e:
-        logger.error(f"Error getting POCRA DBT application status: {e}")
-        raise ModelRetry(f"Unexpected error in POCRA DBT application status request. {str(e)}")

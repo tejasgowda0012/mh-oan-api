@@ -23,6 +23,10 @@ class FarmerContext(BaseModel):
     session_id: str = Field(default="", description="Conversation session id.")
     moderation_str: Optional[str] = Field(default=None, description="The moderation result of the user's question.")
     farmer_id: Optional[str] = Field(default=None, description="The farmer ID of the user.")
+    unique_id: Optional[str] = Field(
+        default=None,
+        description="Agristack registration number when farmer_id is not in the JWT.",
+    )
 
     def update_moderation_str(self, moderation_str: str):
         """Update the moderation result of the user's question."""
@@ -58,14 +62,28 @@ class FarmerContext(BaseModel):
         else:
             return None
     
-    def _agristack_availability_string(self):
-        """Get the farmer ID string for the agrinet agent."""
+    def _logged_in_identity_string(self) -> Optional[str]:
+        """Tell the agent which farmer identity is already available from the login token."""
         if self.farmer_id:
-            return "**Agristack Information Availability**: ✅"
+            return f"**Logged-in farmer ID (from token):** {self.farmer_id}"
+        if self.unique_id:
+            return f"**Logged-in registration number (from token):** {self.unique_id}"
+        return None
+
+    def _agristack_availability_string(self):
+        """Whether the farmer is logged in with Agristack-linked identity."""
+        if self.farmer_id or self.unique_id:
+            return "**Logged-in farmer (Agristack-linked):** ✅"
         else:
-            return "**Agristack Information Availability**: ❌"
+            return "**Logged-in farmer (Agristack-linked):** ❌"
 
     def get_user_message(self):
         """Get the user message for the agrinet agent."""
-        strings = [self._query_string(), self._language_string(), self._moderation_string(), self._agristack_availability_string()]
+        strings = [
+            self._query_string(),
+            self._language_string(),
+            self._moderation_string(),
+            self._logged_in_identity_string(),
+            self._agristack_availability_string(),
+        ]
         return "\n".join([x for x in strings if x])

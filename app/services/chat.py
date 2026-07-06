@@ -80,7 +80,13 @@ async def stream_chat_messages(
     Uses start_as_current_observation (not @observe) so an OpenTelemetry current
     span exists across StreamingResponse/async-generator yields.
     """
-    logger.info(f"User info: {user_info}")
+    logger.info(
+        "User info: farmer_id=%s unique_id=%s mobile=%s name=%s",
+        user_info.get("farmer_id"),
+        user_info.get("unique_id"),
+        user_info.get("mobile"),
+        user_info.get("name"),
+    )
 
     lf_env = os.getenv("LANGFUSE_TRACING_ENVIRONMENT", "development")
     trace_tags = [f"env:{lf_env}", *([f"model:{MODEL_NAME}"] if MODEL_NAME else [])]
@@ -121,6 +127,7 @@ async def stream_chat_messages(
                 lang_code=target_lang,
                 session_id=session_id,
                 farmer_id=user_info.get("farmer_id"),
+                unique_id=user_info.get("unique_id"),
             )
 
             message_pairs = "\n\n".join(format_message_pairs(history, 3))

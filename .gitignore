@@ -185,3 +185,5 @@ cython_debug/
 .pypirc
 .DS_Store
 .DS_Store
+dump.rdb
+app/auth/jwt_auth.py
