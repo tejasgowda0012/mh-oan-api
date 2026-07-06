@@ -494,8 +494,9 @@ class SchemeStatusRequest(BaseModel):
 async def get_scheme_status(ctx: RunContext[FarmerContext]) -> str:
     """Fetch MahaDBT scheme application status for the logged-in farmer via cross-network.
 
-    Use only when the farmer clearly wants MahaDBT / state scheme status — not POCRA DBT.
-    If they only say "DBT status" without specifying, ask whether they mean MahaDBT or POCRA DBT first.
+    Call only after the system prompt's status-clarification flow — when the farmer clearly
+    wants MahaDBT / state scheme status. For vague "DBT status" queries, ask follow-up in
+    your reply first; do not call this tool until they choose.
 
     Returns application status, disbursement information, and scheme details.
     The farmer is identified automatically from the login token (farmer_id or registration number).
@@ -1067,16 +1068,13 @@ async def get_pocra_dbt_status(
 ) -> str:
     """Fetch POCRA DBT application status for the logged-in farmer via cross-network.
 
-    Use only when the farmer clearly wants POCRA DBT status — not MahaDBT.
-    If they only say "DBT status" without specifying, ask whether they mean MahaDBT or POCRA DBT first.
+    Call only after the system prompt's status-clarification flow — when the farmer clearly
+    wants POCRA DBT status. For vague queries or first-time POCRA DBT requests, ask
+    follow-up in your reply first (all applications vs one specific number); do not call
+    this tool until they answer.
 
     The farmer is identified automatically from the login token (farmer_id or registration number).
     Each farmer may have multiple DBT applications.
-
-    Before calling this tool for the first time in a conversation, ask the farmer:
-    - whether they want a summary of **all** their POCRA DBT applications, or
-    - the status of one **specific application** (they must share the complete application
-      number from their receipt, SMS, or portal — never refer to masked "***" placeholders).
 
     Args:
         application_id: Full POCRA DBT application number for a single-application lookup.
