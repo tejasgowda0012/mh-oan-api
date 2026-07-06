@@ -8,11 +8,18 @@ from agents.tools.agri_services import agri_services
 from agents.tools.maps import reverse_geocode, forward_geocode  
 from agents.tools.agristack import fetch_agristack_data
 from agents.tools.mahadbt import get_scheme_status
+from agents.tools.pocra_dbt import get_pocra_dbt_status
 from agents.tools.terms import search_terms
 from agents.tools.scheme_info import get_scheme_codes, get_scheme_info
 from agents.tools.staff_contact import contact_agricultural_staff
 from agents.tools.pest_detection import (
     analyze_pest_disease_image,
+)
+# from agents.tools.bharat_vistaar import call_bharat_vistaar_network
+from agents.tools.cross_network import (
+    pmkisan_installment_init,
+    pmkisan_installment_status,
+    smam_application_status,
 )
 
 TOOLS = [
@@ -119,6 +126,14 @@ TOOLS = [
         require_parameter_descriptions=False,
     ),
 
+    # POCRA DBT
+    Tool(
+        get_pocra_dbt_status,
+        takes_ctx=True,
+        docstring_format='auto',
+        require_parameter_descriptions=False,
+    ),
+
     # Agricultural Staff Contact
     Tool(
         contact_agricultural_staff,
@@ -130,6 +145,38 @@ TOOLS = [
     # Pest & disease detection (image uploaded via POST /api/upload)
     Tool(
         analyze_pest_disease_image,
+        takes_ctx=False,
+        docstring_format='auto',
+        require_parameter_descriptions=True,
+    ),
+
+    # Bharat Vistaar cross-network (central schemes / grievances)
+    # Tool(
+    #     call_bharat_vistaar_network,
+    #     takes_ctx=True,
+    #     docstring_format='auto',
+    #     require_parameter_descriptions=True,
+    # ),
+
+    # PM-KISAN installment status — Step 1: init (send registration number)
+    Tool(
+        pmkisan_installment_init,
+        takes_ctx=True,
+        docstring_format='auto',
+        require_parameter_descriptions=True,
+    ),
+
+    # PM-KISAN installment status — Step 2: status (submit OTP, get installment details)
+    Tool(
+        pmkisan_installment_status,
+        takes_ctx=True,
+        docstring_format='auto',
+        require_parameter_descriptions=True,
+    ),
+
+    # SMAM application status (single step by application number)
+    Tool(
+        smam_application_status,
         takes_ctx=False,
         docstring_format='auto',
         require_parameter_descriptions=True,
