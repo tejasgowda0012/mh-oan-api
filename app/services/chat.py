@@ -35,11 +35,16 @@ from agents.deps import FarmerContext
 
 logger = get_logger(__name__)
 
-MODEL_NAME = (
+AGRINET_MODEL_NAME = (
     os.getenv("LLM_AGRINET_MODEL_NAME")
     or os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME")
     or os.getenv("LLM_MODEL_NAME")
 )
+MODERATION_MODEL_NAME = (
+    os.getenv("LLM_MODERATION_MODEL_NAME")
+    or AGRINET_MODEL_NAME
+)
+MODEL_NAME = AGRINET_MODEL_NAME
 
 CHAT_TRACE_NAME = (
     os.getenv("LANGFUSE_TRACE_NAME")
@@ -211,7 +216,7 @@ async def _run_moderation(user_message: str, session_id: str):
 
     lf_update_current_observation(
         output=str(run.output),
-        model=MODEL_NAME,
+        model=MODERATION_MODEL_NAME,
         request_tokens=usage_data.request_tokens or 0,
         response_tokens=usage_data.response_tokens or 0,
         metadata={},
@@ -323,7 +328,7 @@ async def _run_agrinet_stream(
             )
             lf_update_current_observation(
                 output=run_result_payload,
-                model=MODEL_NAME,
+                model=AGRINET_MODEL_NAME,
                 request_tokens=request_tokens,
                 response_tokens=response_tokens,
                 metadata={},
