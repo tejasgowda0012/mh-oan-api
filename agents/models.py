@@ -23,7 +23,6 @@ agrinet_vllm_settings = ModelSettings(
     temperature=1.0,
     top_p=0.95,
     tool_calls_limit=15,
-    presence_penalty=1.5,
     parallel_tool_calls=True,
     timeout=60,
     usage_limits=UsageLimits(
@@ -33,8 +32,6 @@ agrinet_vllm_settings = ModelSettings(
     ),
     extra_body={
         "top_k": 64,
-        "min_p": 0.0,
-        "repetition_penalty": 1.0,
         "chat_template_kwargs": {"enable_thinking": False},
     },
 )
