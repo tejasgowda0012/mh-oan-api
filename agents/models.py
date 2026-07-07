@@ -32,7 +32,7 @@ agrinet_vllm_settings = ModelSettings(
         total_tokens_limit=100_000,
     ),
     extra_body={
-        "top_k": 20,
+        "top_k": 64,
         "min_p": 0.0,
         "repetition_penalty": 1.0,
         "chat_template_kwargs": {"enable_thinking": False},
