@@ -52,9 +52,15 @@ async def create_suggestions(
             logger.info(f"No conversation history for session {session_id}, skipping suggestions")
             return []
 
-        message_pairs = "\n\n".join(format_message_pairs(history, 5))
+        message_pairs = "\n\n".join(format_message_pairs(history, 1))
         target_lang_name = Language.get(target_lang).display_name(target_lang)
-        message = f"**Conversation**\n\n{message_pairs}\n\n**Suggest exactly 1 NEW follow-up tap-chip question in {target_lang_name} — short, casual, 4–7 words, concrete farm action. No I/you/your, no 'in your area', no vague 'safe to plant' questions. Something the farmer has NOT already asked.**"
+        message = (
+            f"**Conversation (use only the latest farmer question and assistant answer)**\n\n"
+            f"{message_pairs}\n\n"
+            f"**Important:** Ignore all earlier questions in this session. Base the suggestion only on the latest farmer question and the latest assistant answer. "
+            f"Write it as a short question a farmer would ask the system, not a question the system would ask the farmer.**\n\n"
+            f"**Suggest exactly 1 NEW follow-up tap-chip question in {target_lang_name} — short, casual, 4–7 words, concrete farm action. No I/you/your, no 'in your area', no vague 'safe to plant' questions. Something the farmer has NOT already asked.**"
+        )
 
         lf_env = os.getenv("LANGFUSE_TRACING_ENVIRONMENT", "development")
         trace_tags = [
