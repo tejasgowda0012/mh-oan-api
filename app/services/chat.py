@@ -30,9 +30,11 @@ async def stream_chat_messages(
     # Generate a unique content ID for this query
     content_id = f"query_{session_id}_{len(history)//2 + 1}"
     logger.info(f"User info: {user_info}")
+    user_claims = user_info if isinstance(user_info, dict) else {}
     deps = FarmerContext(query=query,
                          lang_code=target_lang,
-                         farmer_id=user_info.get('farmer_id')
+                         farmer_id=user_claims.get('farmer_id') or user_claims.get('farmerid'),
+                         user_info=user_claims,
                          )
 
     message_pairs = "\n\n".join(format_message_pairs(history, 3))
