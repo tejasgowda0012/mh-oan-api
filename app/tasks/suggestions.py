@@ -41,13 +41,6 @@ async def create_suggestions(
     logger.info(f"Getting suggestions for session {session_id}")
 
     try:
-        # Invalidate the cache immediately to prevent serving stale suggestions while generating
-        try:
-            await set_cache(f"suggestions_{session_id}_{target_lang}", None)
-            logger.info(f"Invalidated suggestions cache for session {session_id}_{target_lang}")
-        except Exception as e:
-            logger.error(f"Error invalidating suggestions cache: {str(e)}")
-
         # Wait for the chat stream to complete and update the history in the database.
         # Poll until the history contains a user message matching the current query,
         # so we never generate suggestions based on the previous turn (mixed use-case fix).
