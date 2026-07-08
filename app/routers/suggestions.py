@@ -17,28 +17,7 @@ async def suggest(request: SuggestionsRequest = Depends(), user_info: dict = Dep
     # Bhili UI uses bhb; suggestions are generated in mr (see chat flow), then mr → bhb here.
     cache_lang = "mr" if request.target_lang == "bhb" else request.target_lang
     cache_key = f"suggestions_{request.session_id}_{cache_lang}"
-    
-    # Poll cache for up to 3.5 seconds to wait for background suggestions generation task to finish
-    import asyncio
-    suggestions = None
-    for _ in range(7):  # 7 * 0.5s = 3.5s
-        suggestions = await get_cache(cache_key)
-        if suggestions:
-            break
-        await asyncio.sleep(0.5)
-        
-    if not suggestions:
-        from helpers.utils import get_logger
-        logger = get_logger(__name__)
-        logger.info(f"Cache miss for suggestions, generating on-the-fly for session {request.session_id}")
-        from app.tasks.suggestions import create_suggestions
-        suggestions = await create_suggestions(
-            session_id=request.session_id,
-            target_lang=cache_lang,
-            user_id=user_info.get("farmer_id")
-        )
-        
-    suggestions = suggestions or []
+    suggestions = await get_cache(cache_key) or []
     if request.target_lang == "bhb" and suggestions:
         translator = BhashiniTranslator(source_lang="mr", target_lang="bhb")
         suggestions = await translator.translate(suggestions)
