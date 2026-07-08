@@ -11,6 +11,7 @@ from app.utils import (
 from helpers.telemetry import create_moderation_event, TelemetryRequest
 from app.tasks.telemetry import send_telemetry
 from app.tasks.suggestions import create_suggestions
+from app.services.identity import resolve_memory_user_id
 from agents.deps import FarmerContext
 
 logger = get_logger(__name__)
@@ -31,11 +32,15 @@ async def stream_chat_messages(
     content_id = f"query_{session_id}_{len(history)//2 + 1}"
     logger.info(f"User info: {user_info}")
     user_claims = user_info if isinstance(user_info, dict) else {}
-    deps = FarmerContext(query=query,
-                         lang_code=target_lang,
-                         farmer_id=user_claims.get('farmer_id') or user_claims.get('farmerid'),
-                         user_info=user_claims,
-                         )
+    memory_user_id = resolve_memory_user_id(user_id, user_claims)
+    deps = FarmerContext(
+        query=query,
+        lang_code=target_lang,
+        farmer_id=user_claims.get('farmer_id') or user_claims.get('farmerid'),
+        user_info=user_claims,
+        memory_user_id=memory_user_id,
+    )
+    logger.info("memory_user_id=%s for session %s", memory_user_id, session_id)
 
     message_pairs = "\n\n".join(format_message_pairs(history, 3))
     logger.info(f"Message pairs: {message_pairs}")

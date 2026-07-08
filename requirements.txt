@@ -55,5 +55,9 @@ google-cloud-translate  # For Google Translation API
 # Language codes
 langcodes[data]==3.4.0
 
+# Long-term farmer memory (mem0 + Qdrant)
+mem0ai
+qdrant-client
+
 # Humanize time, date, numbers, etc.
 humanize

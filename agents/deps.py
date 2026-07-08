@@ -21,6 +21,10 @@ class FarmerContext(BaseModel):
     lang_code: str = Field(description="The language code of the user's question.", default='mr')
     moderation_str: Optional[str] = Field(default=None, description="The moderation result of the user's question.")
     farmer_id: Optional[str] = Field(default=None, description="The farmer ID of the user.")
+    memory_user_id: Optional[str] = Field(
+        default=None,
+        description="Hashed farmer id for mem0 long-term memory (None = memory tools disabled).",
+    )
     user_info: Dict[str, Any] = Field(default_factory=dict, description="Authenticated user metadata.")
 
     def update_moderation_str(self, moderation_str: str):

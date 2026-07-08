@@ -12,6 +12,7 @@ from agents.tools.terms import search_terms
 from agents.tools.scheme_info import get_scheme_codes, get_scheme_info, get_multiple_schemes_info
 from agents.tools.staff_contact import contact_agricultural_staff
 from agents.tools.pest_detection import detect_crop_pest
+from agents.tools.memory_tool import recall_farmer_memory, save_farmer_memory
 
 TOOLS = [
     # Search Terms
@@ -21,6 +22,20 @@ TOOLS = [
         docstring_format='auto', 
         require_parameter_descriptions=True,
 
+    ),
+
+    # Long-term farmer memory (mem0)
+    Tool(
+        recall_farmer_memory,
+        takes_ctx=True,
+        docstring_format='auto',
+        require_parameter_descriptions=True,
+    ),
+    Tool(
+        save_farmer_memory,
+        takes_ctx=True,
+        docstring_format='auto',
+        require_parameter_descriptions=True,
     ),
 
     # Search Documents
