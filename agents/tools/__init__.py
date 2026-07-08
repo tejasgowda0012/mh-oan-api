@@ -20,11 +20,26 @@ from agents.tools.cross_network import (
     pmkisan_installment_status,
     smam_application_status,
 )
+from agents.tools.memory_tool import recall_farmer_memory, save_farmer_memory
 
 TOOLS = [
     # Search Terms
     Tool(
         search_terms,
+        takes_ctx=True,
+        docstring_format='auto',
+        require_parameter_descriptions=True,
+    ),
+
+    # Long-term farmer memory (mem0)
+    Tool(
+        recall_farmer_memory,
+        takes_ctx=True,
+        docstring_format='auto',
+        require_parameter_descriptions=True,
+    ),
+    Tool(
+        save_farmer_memory,
         takes_ctx=True,
         docstring_format='auto',
         require_parameter_descriptions=True,

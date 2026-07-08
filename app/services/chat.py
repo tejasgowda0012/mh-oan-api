@@ -31,6 +31,7 @@ from app.utils import (
     filter_thinking_from_history,
 )
 from app.tasks.suggestions import create_suggestions
+from app.services.identity import resolve_memory_user_id
 from agents.deps import FarmerContext
 
 logger = get_logger(__name__)
@@ -86,6 +87,8 @@ async def stream_chat_messages(
     span exists across StreamingResponse/async-generator yields.
     """
     user_claims = user_info if isinstance(user_info, dict) else {}
+    memory_user_id = resolve_memory_user_id(user_id, user_claims)
+    logger.info("memory_user_id=%s for session %s", memory_user_id, session_id)
 
     logger.info(
         "User info: farmer_id=%s unique_id=%s mobile=%s name=%s",
@@ -136,6 +139,7 @@ async def stream_chat_messages(
                 farmer_id=user_claims.get("farmer_id"),
                 unique_id=user_claims.get("unique_id"),
                 user_info=user_claims,
+                memory_user_id=memory_user_id,
             )
 
             message_pairs = "\n\n".join(format_message_pairs(history, 3))

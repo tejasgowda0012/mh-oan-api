@@ -12,13 +12,22 @@ from app.routers import chat, transcribe, suggestions, tts, health, upload, pest
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan events for startup and shutdown"""
-    # Startup
+    import asyncio
+    import logging
+
+    log = logging.getLogger(__name__)
+    loop = asyncio.get_running_loop()
+    try:
+        from app.services.memory import memory_service
+        await loop.run_in_executor(None, memory_service._get_client)
+    except Exception:
+        log.warning("memory service warm-up failed", exc_info=True)
+
     print(f"🚀 {settings.app_name} starting up...")
     print(f"📍 Environment: {settings.environment}")
     print(f"🔧 Debug mode: {settings.debug}")
     print(f"🌐 CORS origins: {settings.allowed_origins}")
     yield
-    # Shutdown
     print(f"🛑 {settings.app_name} shutting down...")
 
 # Create FastAPI app with settings

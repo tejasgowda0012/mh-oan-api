@@ -27,9 +27,13 @@ class FarmerContext(BaseModel):
         default=None,
         description="Agristack registration number when farmer_id is not in the JWT.",
     )
+    memory_user_id: Optional[str] = Field(
+        default=None,
+        description="Hashed farmer id for mem0 long-term memory (None = memory tools disabled).",
+    )
     user_info: Dict[str, Any] = Field(default_factory=dict, description="Authenticated user metadata.")
 
-    @field_validator("farmer_id", "unique_id", mode="before")
+    @field_validator("farmer_id", "unique_id", "memory_user_id", mode="before")
     @classmethod
     def _coerce_optional_identifiers(cls, value):
         if value in (None, ""):
