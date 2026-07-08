@@ -26,6 +26,20 @@ elif LLM_PROVIDER == 'openai':
             api_key=os.getenv('OPENAI_API_KEY'),
         ),
     )
+elif LLM_PROVIDER == 'azure-openai':
+    from openai import AsyncAzureOpenAI
+    _azure_client = AsyncAzureOpenAI(
+        azure_endpoint=os.getenv('AZURE_OPENAI_ENDPOINT'),
+        api_key=os.getenv('AZURE_OPENAI_API_KEY'),
+        api_version=os.getenv('AZURE_OPENAI_API_VERSION', '2024-12-01-preview'),
+    )
+    LLM_MODEL = OpenAIModel(
+        os.getenv('AZURE_OPENAI_DEPLOYMENT_NAME', LLM_MODEL_NAME),
+        provider=OpenAIProvider(openai_client=_azure_client),
+    )
 else:
-    raise ValueError(f"Invalid LLM_PROVIDER: {LLM_PROVIDER}. Must be one of: 'gemini', 'qwen', 'openai'")
+    raise ValueError(
+        f"Invalid LLM_PROVIDER: {LLM_PROVIDER}. "
+        "Must be one of: 'vllm', 'openai', 'azure-openai'"
+    )
 

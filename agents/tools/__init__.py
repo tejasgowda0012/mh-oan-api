@@ -29,13 +29,13 @@ TOOLS = [
         recall_farmer_memory,
         takes_ctx=True,
         docstring_format='auto',
-        require_parameter_descriptions=True,
+        require_parameter_descriptions=False,
     ),
     Tool(
         save_farmer_memory,
         takes_ctx=True,
         docstring_format='auto',
-        require_parameter_descriptions=True,
+        require_parameter_descriptions=False,
     ),
 
     # Search Documents
