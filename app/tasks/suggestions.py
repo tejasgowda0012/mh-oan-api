@@ -41,8 +41,29 @@ async def create_suggestions(
     logger.info(f"Getting suggestions for session {session_id}")
 
     try:
-        # Get message history
-        raw_history = await _get_message_history(session_id)
+        # Invalidate the cache immediately to prevent serving stale suggestions while generating
+        try:
+            await set_cache(f"suggestions_{session_id}_{target_lang}", None)
+            logger.info(f"Invalidated suggestions cache for session {session_id}_{target_lang}")
+        except Exception as e:
+            logger.error(f"Error invalidating suggestions cache: {str(e)}")
+
+        # Wait for the chat stream to complete and update the history in the database.
+        # We do this by polling the history until it grows (meaning the current turn's
+        # query and response are saved).
+        import asyncio
+        initial_history = await _get_message_history(session_id)
+        initial_len = len(initial_history)
+        
+        # Max wait time of 30 seconds (60 * 0.5s) to allow streaming to complete
+        for _ in range(60):
+            await asyncio.sleep(0.5)
+            raw_history = await _get_message_history(session_id)
+            if len(raw_history) > initial_len:
+                break
+        else:
+            raw_history = initial_history
+
         history = trim_history(raw_history,
                           30_000,
                           include_tool_calls=False,
