@@ -80,7 +80,9 @@ def is_guest_user(
     if user_claims.get("is_guest") is True or user_claims.get("guest") is True:
         return True
     claim_uid = user_claims.get("user_id") or user_claims.get("sub")
-    return _is_guest_value(str(claim_uid) if claim_uid is not None else None)
+    if claim_uid is not None:
+        return _is_guest_value(str(claim_uid))
+    return False
 
 
 def extract_phone_from_claims(claims: dict) -> Optional[str]:
