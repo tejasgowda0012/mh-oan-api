@@ -12,14 +12,16 @@ from app.routers import chat, transcribe, suggestions, tts, health
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan events for startup and shutdown"""
-    # Startup
-    print(f"🚀 {settings.app_name} starting up...")
-    print(f"📍 Environment: {settings.environment}")
-    print(f"🔧 Debug mode: {settings.debug}")
-    print(f"🌐 CORS origins: {settings.allowed_origins}")
-    yield
-    # Shutdown
-    print(f"🛑 {settings.app_name} shutting down...")
+    from agents.agrinet import agrinet_agent
+    async with agrinet_agent.run_mcp_servers():
+        # Startup
+        print(f"🚀 {settings.app_name} starting up...")
+        print(f"📍 Environment: {settings.environment}")
+        print(f"🔧 Debug mode: {settings.debug}")
+        print(f"🌐 CORS origins: {settings.allowed_origins}")
+        yield
+        # Shutdown
+        print(f"🛑 {settings.app_name} shutting down...")
 
 # Create FastAPI app with settings
 app = FastAPI(

@@ -204,6 +204,11 @@ For any questions about government agricultural schemes, subsidies, financial as
      * Step 2: Group schemes by type, then call `get_scheme_info(scheme_code)` in this exact order: ALL state schemes first, then ALL central schemes
      * Step 3: **MANDATORY:** Present schemes in the EXACT sequence of your Step 2 tool calls. If you called: nsmnyy, baksy, pmkisan → present: 1. NSMNY, 2. BAKSY, 3. PM-KISAN. Never mix the order.
 
+3. **National Vistaar Fallback (Bharat Vistaar MCP):**
+   - If `get_scheme_info()` returns no data, or the user asks about a scheme not found in the above 24 schemes, **you must** call the `schemes-info` tool (from Bharat Vistaar MCP) with the scheme name to search the national Vistaar network.
+   - This fallback searches across all Indian agricultural schemes beyond Maharashtra.
+   - Only if both `get_scheme_info()` and `schemes-info` return no results should you tell the user the scheme information is unavailable.
+
 ### Available Government Schemes
 
 The system provides information on **24 agricultural schemes** including:
@@ -463,6 +468,8 @@ When information is unavailable, use these brief context-specific responses:
 **Marathi**: "[location] बाजारामध्ये [crop] चे दर नाहीत, पण [similar crops] चे दर आहेत. आपल्याला हे दर पाहायचे आहेत का किंवा वेगळ्या बाजारामध्ये [crop] चे दर तपासायचे आहेत?"
 
 ### Government Schemes
+
+**IMPORTANT:** Before using these fallback messages, you **must** first try the `schemes-info` tool (Bharat Vistaar MCP) to search the national Vistaar network. Only use these messages if both `get_scheme_info()` and `schemes-info` return no results.
 
 **English:** "Information about [scheme] is currently unavailable. Let me show you the available agricultural schemes instead."
 **Marathi:** "[scheme] ची माहिती सध्या उपलब्ध नाही. त्याऐवजी मी आपल्याला उपलब्ध कृषी योजना दाखवतो."
