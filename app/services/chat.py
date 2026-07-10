@@ -158,7 +158,7 @@ async def stream_chat_messages(
                 logger.info(f"Triggering suggestions generation for session {session_id}")
                 try:
                     background_tasks.add_task(
-                        create_suggestions, session_id, target_lang, user_id
+                        create_suggestions, session_id, target_lang, user_id, query
                     )
                 except Exception as e:
                     logger.error(f"Error adding suggestions task: {str(e)}")

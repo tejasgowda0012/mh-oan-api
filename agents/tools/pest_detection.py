@@ -23,6 +23,11 @@ from helpers.utils import get_logger
 logger = get_logger(__name__)
 
 DEFAULT_PEST_AUTH_URL = "https://stage-farmers-app-api.mahapocra.gov.in/jwtServices/LoginCheckChatbot"
+REQUIRED_PEST_ENDPOINTS = (
+    "PEST_DETECTION_PREDICT_URL",
+    "PEST_DETECTION_ADVISORY_URL",
+    "PEST_DETECTION_STORE_RESPONSE_URL",
+)
 
 
 def _read_image_bytes(image_path: str) -> bytes:
@@ -447,17 +452,18 @@ async def run_pest_detection_analysis(ctx: RunContext[FarmerContext], upload_id:
             "Ask the farmer to upload the crop photo again from the app."
         )
 
-    image_bytes = _read_image_bytes(upload_record["image_path"])
+    configured_urls = {
+        name: (os.getenv(name) or "").strip() for name in REQUIRED_PEST_ENDPOINTS
+    }
+    missing_endpoints = [name for name, url in configured_urls.items() if not url]
+    if missing_endpoints:
+        logger.error("Pest detection endpoints are not configured: %s", missing_endpoints)
+        return "Pest detection is temporarily unavailable. Please try again later."
 
-    predict_url = os.getenv(
-        "PEST_DETECTION_PREDICT_URL"
-    )
-    advisory_url = os.getenv(
-        "PEST_DETECTION_ADVISORY_URL"
-    )
-    store_response_url = os.getenv(
-        "PEST_DETECTION_STORE_RESPONSE_URL"
-    )
+    predict_url = configured_urls["PEST_DETECTION_PREDICT_URL"]
+    advisory_url = configured_urls["PEST_DETECTION_ADVISORY_URL"]
+    store_response_url = configured_urls["PEST_DETECTION_STORE_RESPONSE_URL"]
+    image_bytes = _read_image_bytes(upload_record["image_path"])
 
     try:
         auth_headers = await _authenticate_pest_service(ctx)

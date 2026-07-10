@@ -33,7 +33,7 @@ _MODEL_NAME = (
 
 
 async def create_suggestions(
-    session_id: str, target_lang: str = "mr", user_id: str | None = None
+    session_id: str, target_lang: str = "mr", user_id: str | None = None, query: str | None = None
 ):
     """
     Create and save suggestions for a session
@@ -41,8 +41,36 @@ async def create_suggestions(
     logger.info(f"Getting suggestions for session {session_id}")
 
     try:
-        # Get message history
-        raw_history = await _get_message_history(session_id)
+        # Wait for the chat stream to complete and update the history in the database.
+        # Poll until the history contains a user message matching the current query,
+        # so we never generate suggestions based on the previous turn (mixed use-case fix).
+        import asyncio
+        initial_history = await _get_message_history(session_id)
+        initial_len = len(initial_history)
+
+        def _history_has_current_query(hist) -> bool:
+            """Check if the latest user message in history matches the current query."""
+            if query is None:
+                return len(hist) > initial_len
+            for msg in reversed(hist):
+                for part in msg.parts:
+                    if getattr(part, "part_kind", "") == "user-prompt":
+                        # Strip the FarmerContext wrapper to get the raw query text
+                        content = getattr(part, "content", "") or ""
+                        if query.strip() in content:
+                            return True
+                        return False  # Latest user message doesn't match — wrong turn
+            return False
+
+        # Max wait time of 30 seconds (60 * 0.5s) to allow streaming to complete
+        raw_history = initial_history
+        for _ in range(60):
+            await asyncio.sleep(0.5)
+            candidate = await _get_message_history(session_id)
+            if _history_has_current_query(candidate):
+                raw_history = candidate
+                break
+
         history = trim_history(raw_history,
                           30_000,
                           include_tool_calls=False,

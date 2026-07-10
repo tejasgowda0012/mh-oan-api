@@ -56,7 +56,6 @@ async def get_current_user(token: str | None = Depends(oauth2_scheme)):
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-
     if not token or public_key is None:
         if public_key is None:
             logger.error("JWT Public Key is not loaded, cannot verify tokens.")
@@ -82,7 +81,6 @@ async def get_current_user(token: str | None = Depends(oauth2_scheme)):
             detail="Token has expired",
             headers={"WWW-Authenticate": "Bearer"},
         )
-
     except jwt.InvalidTokenError as e:
         logger.warning(f"Invalid token error: {str(e)}")
         raise credentials_exception

@@ -17,24 +17,24 @@ term_pairs = json.load(open('assets/glossary_terms.json', 'r', encoding='utf-8')
 
 SUPPORTED_LANGS = ("en", "hi", "mr", "transliteration")
 
-# Cap how many times `search_terms` can be called within a single user turn.
-# Resets at the next user message. Tweak here to tune the loop-prevention.
-MAX_SEARCH_TERMS_CALLS = 5
+# # Cap how many times `search_terms` can be called within a single user turn.
+# # Resets at the next user message. Tweak here to tune the loop-prevention.
+# MAX_SEARCH_TERMS_CALLS = 5
 
 
-def _calls_this_turn(ctx: RunContext, tool_name: str) -> int:
-    """Count tool invocations of `tool_name` since the last UserPromptPart in this run."""
-    last_user_idx = 0
-    for i, m in enumerate(ctx.messages):
-        if isinstance(m, ModelRequest) and any(isinstance(p, UserPromptPart) for p in m.parts):
-            last_user_idx = i
-    return sum(
-        1
-        for m in ctx.messages[last_user_idx:]
-        if isinstance(m, ModelResponse)
-        for p in m.parts
-        if isinstance(p, ToolCallPart) and p.tool_name == tool_name
-    )
+# def _calls_this_turn(ctx: RunContext, tool_name: str) -> int:
+#     """Count tool invocations of `tool_name` since the last UserPromptPart in this run."""
+#     last_user_idx = 0
+#     for i, m in enumerate(ctx.messages):
+#         if isinstance(m, ModelRequest) and any(isinstance(p, UserPromptPart) for p in m.parts):
+#             last_user_idx = i
+#     return sum(
+#         1
+#         for m in ctx.messages[last_user_idx:]
+#         if isinstance(m, ModelResponse)
+#         for p in m.parts
+#         if isinstance(p, ToolCallPart) and p.tool_name == tool_name
+#     )
 
 
 class Language(str, Enum):
@@ -87,12 +87,12 @@ async def search_terms(
     Returns:
         str: Formatted string with matching results and their scores
     """
-    if _calls_this_turn(ctx, "search_terms") > MAX_SEARCH_TERMS_CALLS:
-        raise ModelRetry(
-            f"You have called `search_terms` {MAX_SEARCH_TERMS_CALLS} times in this turn — "
-            f"the maximum allowed. Do NOT call `search_terms` again. Use `search_documents` "
-            f"or another tool with the terms you've already gathered, or proceed to your answer."
-        )
+    # if _calls_this_turn(ctx, "search_terms") > MAX_SEARCH_TERMS_CALLS:
+    #     raise ModelRetry(
+    #         f"You have called `search_terms` {MAX_SEARCH_TERMS_CALLS} times in this turn — "
+    #         f"the maximum allowed. Do NOT call `search_terms` again. Use `search_documents` "
+    #         f"or another tool with the terms you've already gathered, or proceed to your answer."
+    #     )
 
     if not 0 <= threshold <= 1:
         raise ValueError("threshold must be between 0 and 1")
