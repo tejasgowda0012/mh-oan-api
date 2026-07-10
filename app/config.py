@@ -1,11 +1,24 @@
 import os
 from pathlib import Path
 from typing import List, Optional
+
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
 load_dotenv()
+
+
+def _running_in_container() -> bool:
+    return Path("/.dockerenv").exists() or bool(os.getenv("KUBERNETES_SERVICE_HOST"))
+
+
+def _resolve_redis_host(host: str) -> str:
+    """Map compose/docker hostnames: host OS → 127.0.0.1; in-container keep service DNS."""
+    h = (host or "localhost").strip()
+    if not _running_in_container() and h in ("redis-stack", "redis"):
+        return "127.0.0.1"
+    return h or "localhost"
 
 class Settings(BaseSettings):
     # Core Application Settings
@@ -41,6 +54,12 @@ class Settings(BaseSettings):
     redis_port: int = 6379
     redis_db: int = 0
     redis_key_prefix: str = "sva-cache-"
+
+    @field_validator("redis_host", mode="before")
+    @classmethod
+    def _redis_host_resolved(cls, v: object) -> str:
+        raw = str(v).strip() if v is not None and str(v).strip() else "localhost"
+        return _resolve_redis_host(raw)
     redis_socket_connect_timeout: int = 10
     redis_socket_timeout: int = 10
     redis_max_connections: int = 100

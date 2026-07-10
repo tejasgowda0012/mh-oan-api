@@ -13,6 +13,7 @@ from agents.tools.scheme_info import get_scheme_codes, get_scheme_info, get_mult
 from agents.tools.staff_contact import contact_agricultural_staff
 from agents.tools.pest_detection import detect_crop_pest
 from agents.tools.memory_tool import recall_farmer_memory, save_farmer_memory
+from agents.tools.profile_tool import update_farmer_profile
 
 TOOLS = [
     # Search Terms
@@ -37,6 +38,13 @@ TOOLS = [
         docstring_format='auto',
         require_parameter_descriptions=False,
     ),
+    Tool(
+        update_farmer_profile,
+        takes_ctx=True,
+        docstring_format='auto',
+        require_parameter_descriptions=False,
+    ),
+
 
     # Search Documents
     Tool(

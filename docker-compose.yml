@@ -10,11 +10,24 @@ services:
       - .:/app
     env_file:
       - .env
+    environment:
+      REDIS_HOST: redis
     depends_on:
       - qdrant
+      - redis
     restart: unless-stopped
     networks:
       - svanetwork
+
+  redis:
+    image: redis:latest
+    container_name: redis-stack
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    networks:
+      - svanetwork
+
 
   qdrant:
     image: qdrant/qdrant:latest

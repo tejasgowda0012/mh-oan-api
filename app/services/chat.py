@@ -12,6 +12,7 @@ from helpers.telemetry import create_moderation_event, TelemetryRequest
 from app.tasks.telemetry import send_telemetry
 from app.tasks.suggestions import create_suggestions
 from app.services.identity import resolve_memory_user_id
+from app.services.memory_context import preload_saved_farmer_context
 from agents.deps import FarmerContext
 
 logger = get_logger(__name__)
@@ -40,7 +41,6 @@ async def stream_chat_messages(
         user_info=user_claims,
         memory_user_id=memory_user_id,
     )
-    logger.info("memory_user_id=%s for session %s", memory_user_id, session_id)
 
     message_pairs = "\n\n".join(format_message_pairs(history, 3))
     logger.info(f"Message pairs: {message_pairs}")
@@ -48,9 +48,9 @@ async def stream_chat_messages(
         last_response = f"**Conversation**\n\n{message_pairs}\n\n---\n\n"
     else:
         last_response = ""
-    
+
     try:
-        user_message    = f"{last_response}{deps.get_user_message()}"
+        user_message = f"{last_response}{deps.get_moderation_message()}"
         moderation_run  = await moderation_agent.run(user_message)
         moderation_data = moderation_run.output
         logger.info(f"Moderation data: {moderation_data}")
@@ -81,6 +81,15 @@ async def stream_chat_messages(
             except Exception as e:
                 logger.error(f"Error adding suggestions task: {str(e)}")
         deps.update_moderation_str(str(moderation_data))
+        if moderation_data.category == "valid_agricultural" and memory_user_id:
+            saved_context = await preload_saved_farmer_context(memory_user_id, query)
+            deps.saved_farmer_context = saved_context
+            logger.info(
+                "memory_user_id=%s saved_context_chars=%s session=%s",
+                memory_user_id,
+                len(saved_context) if saved_context else 0,
+                session_id,
+            )
     except Exception as e:
         logger.error(f"Error in moderation: {str(e)}")
 

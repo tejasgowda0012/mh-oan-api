@@ -39,25 +39,26 @@ logger.info(f"Successfully loaded JWT Public Key from: {public_key_path}")
 
 async def get_current_user(token: str | None = Depends(oauth2_scheme)):
     """
-    FastAPI dependency to get current authenticated user from JWT token.
-    This replaces the Django middleware approach.
-    Bypasses authentication in development environment.
+    FastAPI dependency: decode JWT claims or reject.
+    Development: missing/invalid Bearer is allowed only when no token is sent (empty claims).
     """
-    # # Skip authentication in development environment
-    # if settings.environment == "development":
-    #     logger.info("Development environment detected - bypassing authentication")
-    #     return "development_user"
-    
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    
+
+    if token is None or not str(token).strip():
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization header with Bearer token is required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     if public_key is None:
         logger.error("JWT Public Key is not loaded, cannot verify tokens.")
         raise credentials_exception
-        
+
     try:
         decoded_token = jwt.decode(
             token,
@@ -66,14 +67,13 @@ async def get_current_user(token: str | None = Depends(oauth2_scheme)):
             options={
                 "verify_signature": True,
                 "verify_aud": False,
-                "verify_iss": False
-            }
+                "verify_iss": False,
+            },
+            leeway=60,
         )
-        
-        logger.info(f"Decoded token: {decoded_token}")
-        
+        logger.info("JWT verified for sub=%s", decoded_token.get("sub"))
         return decoded_token
-        
+
     except jwt.ExpiredSignatureError:
         logger.warning("Token has expired")
         raise HTTPException(
@@ -81,19 +81,35 @@ async def get_current_user(token: str | None = Depends(oauth2_scheme)):
             detail="Token has expired",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     except jwt.InvalidTokenError as e:
-        logger.warning(f"Invalid token error: {str(e)}")
+        logger.warning("Invalid token: %s", e)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Invalid token: {str(e)}",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     except Exception as e:
-        logger.error(f"Unexpected error during token verification: {str(e)}")
+        logger.error("Unexpected error during token verification: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token verification failed",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+
+def decode_token_claims(token: str | None) -> dict | None:
+    """Verify token without raising; for optional auth paths."""
+    if not token or not str(token).strip() or public_key is None:
+        return None
+    try:
+        return jwt.decode(
+            token,
+            public_key,
+            algorithms=[settings.jwt_algorithm],
+            options={"verify_aud": False, "verify_iss": False},
+            leeway=60,
+        )
+    except Exception:
+        return None
