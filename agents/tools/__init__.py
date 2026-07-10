@@ -21,6 +21,7 @@ from agents.tools.cross_network import (
     smam_application_status,
 )
 from agents.tools.memory_tool import recall_farmer_memory, save_farmer_memory
+from agents.tools.profile_tool import update_farmer_profile
 
 TOOLS = [
     # Search Terms
@@ -44,6 +45,13 @@ TOOLS = [
         docstring_format='auto',
         require_parameter_descriptions=False,
     ),
+    Tool(
+        update_farmer_profile,
+        takes_ctx=True,
+        docstring_format='auto',
+        require_parameter_descriptions=False,
+    ),
+
 
     # Search Documents
     Tool(

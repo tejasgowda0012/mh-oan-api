@@ -7,7 +7,17 @@ from contextlib import asynccontextmanager
 load_dotenv()
 
 # Import all routers
-from app.routers import chat, transcribe, suggestions, tts, health, upload, pest_detection
+from app.routers import (
+    chat,
+    health,
+    memories,
+    pest_detection,
+    profile,
+    suggestions,
+    transcribe,
+    tts,
+    upload,
+)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -22,6 +32,12 @@ async def lifespan(app: FastAPI):
         await loop.run_in_executor(None, memory_service._get_client)
     except Exception:
         log.warning("memory service warm-up failed", exc_info=True)
+    try:
+        from app.services.profile import profile_store
+        await loop.run_in_executor(None, profile_store._get_client)
+    except Exception:
+        log.warning("profile store warm-up failed", exc_info=True)
+
 
     print(f"🚀 {settings.app_name} starting up...")
     print(f"📍 Environment: {settings.environment}")
@@ -47,6 +63,18 @@ app.add_middleware(
     allow_headers=settings.allowed_headers,
 )
 
+from fastapi.responses import FileResponse
+
+@app.get("/docs/memory-viewer.html", include_in_schema=False)
+async def memory_viewer_page():
+    path = settings.base_dir / "docs" / "memory-viewer.html"
+    return FileResponse(
+        path,
+        media_type="text/html",
+        headers={"Cache-Control": "no-store, must-revalidate"},
+    )
+
+
 
 @app.get("/")
 async def root():
@@ -66,3 +94,5 @@ app.include_router(tts.router, prefix=settings.api_prefix)
 app.include_router(health.router, prefix=settings.api_prefix)
 app.include_router(upload.router, prefix=settings.api_prefix)
 app.include_router(pest_detection.router, prefix=settings.api_prefix)
+app.include_router(memories.router, prefix=settings.api_prefix)
+app.include_router(profile.router, prefix=settings.api_prefix)

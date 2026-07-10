@@ -32,6 +32,7 @@ from app.utils import (
 )
 from app.tasks.suggestions import create_suggestions
 from app.services.identity import resolve_memory_user_id
+from app.services.memory_context import preload_saved_farmer_context
 from agents.deps import FarmerContext
 
 logger = get_logger(__name__)
@@ -152,11 +153,21 @@ async def stream_chat_messages(
             # Moderation — child span via @observe (regular coroutine, safe)
             # ------------------------------------------------------------------
             moderation_data = await _run_moderation(
-                user_message=f"{last_response}{deps.get_user_message()}",
+                user_message=f"{last_response}{deps.get_moderation_message()}",
                 session_id=session_id,
             )
             logger.info(f"Moderation data: {moderation_data}")
             deps.update_moderation_str(str(moderation_data))
+
+            if moderation_data.category == "valid_agricultural" and memory_user_id:
+                saved_context = await preload_saved_farmer_context(memory_user_id, query)
+                deps.saved_farmer_context = saved_context
+                logger.info(
+                    "memory_user_id=%s saved_context_chars=%s session=%s",
+                    memory_user_id,
+                    len(saved_context) if saved_context else 0,
+                    session_id,
+                )
 
             # Suggestions will be triggered in _run_agrinet_stream after streaming finishes.
 

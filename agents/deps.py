@@ -29,7 +29,11 @@ class FarmerContext(BaseModel):
     )
     memory_user_id: Optional[str] = Field(
         default=None,
-        description="Hashed farmer id for mem0 long-term memory (None = memory tools disabled).",
+        description="Hashed phone id for structured profile + mem0 (None = memory tools and preload disabled).",
+    )
+    saved_farmer_context: Optional[str] = Field(
+        default=None,
+        description="Pre-loaded structured profile snapshot + episodic mem0 bullets (agrinet user message only).",
     )
     user_info: Dict[str, Any] = Field(default_factory=dict, description="Authenticated user metadata.")
 
@@ -97,6 +101,25 @@ class FarmerContext(BaseModel):
         else:
             return "**Logged-in farmer (Agristack-linked):** ❌"
 
+    def _saved_farmer_context_string(self):
+        if not self.saved_farmer_context or not str(self.saved_farmer_context).strip():
+            return None
+        return (
+            "**Saved farmer context (structured profile for location/crops/farm setup; "
+            "episodic lines are past chat topics — not live data; "
+            "do not re-ask for details already in the profile block):**\n"
+            + self.saved_farmer_context.strip()
+        )
+
+    def get_moderation_message(self):
+        """User turn for moderation only — excludes preloaded profile/mem0 PII."""
+        strings = [
+            self._query_string(),
+            self._language_string(),
+            self._agristack_availability_string(),
+        ]
+        return "\n".join([x for x in strings if x])
+
     def get_user_message(self):
         """Get the user message for the agrinet agent."""
         strings = [
@@ -104,6 +127,7 @@ class FarmerContext(BaseModel):
             self._language_string(),
             self._moderation_string(),
             self._logged_in_identity_string(),
+            self._saved_farmer_context_string(),
             self._agristack_availability_string(),
         ]
         return "\n".join([x for x in strings if x])

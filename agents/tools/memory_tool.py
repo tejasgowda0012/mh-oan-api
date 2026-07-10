@@ -46,11 +46,10 @@ async def recall_farmer_memory(ctx: RunContext[FarmerContext], query: str) -> st
 
 
 async def save_farmer_memory(ctx: RunContext[FarmerContext], memory: str) -> str:
-    """Save a durable fact about the farmer for future chats.
+    """Save an episodic note about the farmer for future chats (mem0).
 
-    Use when the farmer shares stable context: main crops, village, land size,
-    irrigation, ongoing pest issues, or preferences they want remembered.
-    Do NOT save one-off prices, weather, or transient scheme answers.
+    Use for past topics, open questions, or chat notes — not for village/district/crop/land/irrigation
+    (use `update_farmer_profile` for those). Do NOT save mandi prices, weather, or scheme details.
 
     Args:
         memory: Clear factual sentence(s) to store, in English or Marathi.
@@ -61,4 +60,4 @@ async def save_farmer_memory(ctx: RunContext[FarmerContext], memory: str) -> str
 
     from app.services.memory import memory_service
 
-    return await memory_service.add_fact(user_id, memory, source="save_farmer_memory", infer=True)
+    return await memory_service.add_fact(user_id, memory, source="save_farmer_memory", infer=False)

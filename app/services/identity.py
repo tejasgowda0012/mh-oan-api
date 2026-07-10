@@ -5,10 +5,10 @@ from typing import Optional
 
 # JWT claims that carry a phone number (not generic `sub` — use sub only as opaque id fallback).
 _PHONE_CLAIM_CANDIDATES = [
+    "mobile",
     "phone",
     "phone_number",
     "phoneNumber",
-    "mobile",
     "msisdn",
 ]
 
@@ -24,7 +24,7 @@ _GUEST_SENTINELS = frozenset(
     }
 )
 
-_CLAIM_ID_KEYS = ("user_id", "sub", "farmer_id", "farmerid", "uid", "id")
+_CLAIM_ID_KEYS = ("user_id", "sub", "farmer_id", "farmerid", "uid", "id", "unique_id")
 
 
 def normalize_phone(phone: str) -> Optional[str]:
@@ -61,28 +61,36 @@ def _is_guest_value(value: Optional[str]) -> bool:
     return False
 
 
+def _jwt_explicit_guest(claims: dict) -> bool:
+    """True when JWT explicitly marks a guest (memory disabled even if phone is present)."""
+    if not claims:
+        return False
+    user_type = claims.get("user_type") or claims.get("type")
+    if user_type is not None and str(user_type).strip().lower() == "guest":
+        return True
+    for key in ("role", "account_type"):
+        raw = claims.get(key)
+        if raw and str(raw).strip().lower() in ("guest", "anonymous", "unauthenticated"):
+            return True
+    if claims.get("is_guest") is True or claims.get("guest") is True:
+        return True
+    return False
+
 def is_guest_user(
     request_user_id: Optional[str],
     user_claims: Optional[dict],
 ) -> bool:
-    """Guests never use long-term memory (matches chat default `anonymous` and JWT guest users)."""
-    if _is_guest_value(request_user_id):
-        return True
-    if not user_claims:
+    """Guests skip mem0 when there is no JWT phone. Phone always wins."""
+    claims = user_claims if isinstance(user_claims, dict) else {}
+    if claims and extract_phone_from_claims(claims):
         return False
-    user_type = user_claims.get("user_type") or user_claims.get("type")
-    if user_type is not None and str(user_type).strip().lower() == "guest":
+    if _jwt_explicit_guest(claims):
         return True
-    for key in ("role", "account_type"):
-        raw = user_claims.get(key)
-        if raw and str(raw).strip().lower() in ("guest", "anonymous", "unauthenticated"):
-            return True
-    if user_claims.get("is_guest") is True or user_claims.get("guest") is True:
-        return True
-    claim_uid = user_claims.get("user_id") or user_claims.get("sub")
-    if claim_uid is not None:
-        return _is_guest_value(str(claim_uid))
-    return False
+    for key in _CLAIM_ID_KEYS:
+        raw = claims.get(key)
+        if raw is not None and str(raw).strip() != "" and not _is_guest_value(str(raw)):
+            return False
+    return _is_guest_value(request_user_id)
 
 
 def extract_phone_from_claims(claims: dict) -> Optional[str]:
@@ -124,13 +132,10 @@ def resolve_memory_user_id(
     """
     Single stable mem0 user key per farmer.
 
-    Priority: guest skip → JWT phone hash → request phone hash → JWT opaque ids →
-    request opaque id only when authenticated (JWT) or in development.
+    Priority: JWT phone hash → request phone hash → JWT opaque ids → request opaque id
+    (authenticated or dev only). Query `user_id=anonymous` never blocks a JWT phone.
     """
     from app.config import settings
-
-    if is_guest_user(request_user_id, user_claims):
-        return None
 
     claims = user_claims if isinstance(user_claims, dict) else {}
     has_auth_claims = bool(claims)
@@ -144,6 +149,9 @@ def resolve_memory_user_id(
     uid = phone_to_memory_user_id(request_user_id)
     if uid:
         return uid
+
+    if is_guest_user(request_user_id, user_claims):
+        return None
 
     for key in _CLAIM_ID_KEYS:
         raw = claims.get(key)
