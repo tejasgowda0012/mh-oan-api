@@ -53,7 +53,7 @@ async def create_suggestions(
         for _ in range(60):
             await asyncio.sleep(0.5)
             candidate = await _get_message_history(session_id)
-            if len(candidate) >= initial_len + 2:
+            if len(candidate) > initial_len:
                 raw_history = candidate
                 break
 
