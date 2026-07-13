@@ -35,6 +35,14 @@ async def chat_endpoint(
     history = await _get_message_history(session_id)
     logger.debug(f"Retrieved message history for session {session_id} - length: {len(history)}")
 
+    # Clear any cached suggestions from previous turns immediately to prevent stale reads
+    from app.core.cache import cache
+    for lang in ["mr", "en", "hi", "bhb"]:
+        try:
+            await cache.delete(f"suggestions_{session_id}_{lang}")
+        except Exception:
+            pass
+
     return StreamingResponse(
         stream_chat_messages(
             query=chat_request.query,
