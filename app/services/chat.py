@@ -118,14 +118,6 @@ async def stream_chat_messages(
         ) as chain_span:
             lf_set_trace_io(input=query)
 
-            # Clear any cached suggestions from previous turns to avoid serving stale suggestions
-            from app.core.cache import cache
-            for lang in ["mr", "en", "hi", "bhb"]:
-                try:
-                    await cache.delete(f"suggestions_{session_id}_{lang}")
-                except Exception:
-                    pass
-
             # ------------------------------------------------------------------
             # Bhili: translate query → English before processing
             # ------------------------------------------------------------------
