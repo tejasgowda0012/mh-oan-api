@@ -64,6 +64,7 @@ async def create_suggestions(
                           )
         if not history:
             logger.info(f"No conversation history for session {session_id}, skipping suggestions")
+            await set_cache(f"suggestions_{session_id}_{target_lang}", [], ttl=SUGGESTIONS_CACHE_TTL)
             return []
 
         message_pairs = "\n\n".join(format_message_pairs(history, 1))
