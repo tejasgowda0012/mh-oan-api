@@ -85,12 +85,14 @@ async def stream_chat_messages(
     Uses start_as_current_observation (not @observe) so an OpenTelemetry current
     span exists across StreamingResponse/async-generator yields.
     """
+    user_claims = user_info if isinstance(user_info, dict) else {}
+
     logger.info(
         "User info: farmer_id=%s unique_id=%s mobile=%s name=%s",
-        user_info.get("farmer_id"),
-        user_info.get("unique_id"),
-        user_info.get("mobile"),
-        user_info.get("name"),
+        user_claims.get("farmer_id"),
+        user_claims.get("unique_id"),
+        user_claims.get("mobile"),
+        user_claims.get("name"),
     )
 
     lf_env = os.getenv("LANGFUSE_TRACING_ENVIRONMENT", "development")
@@ -131,8 +133,9 @@ async def stream_chat_messages(
                 query=query,
                 lang_code=target_lang,
                 session_id=session_id,
-                farmer_id=user_info.get("farmer_id"),
-                unique_id=user_info.get("unique_id"),
+                farmer_id=user_claims.get("farmer_id"),
+                unique_id=user_claims.get("unique_id"),
+                user_info=user_claims,
             )
 
             message_pairs = "\n\n".join(format_message_pairs(history, 3))
@@ -332,11 +335,3 @@ async def _run_agrinet_stream(
     clean_new_messages = filter_thinking_from_history(list(new_messages or []))
     logger.info(f"Updating message history for session {session_id}")
     await update_message_history(session_id, [*history, *clean_new_messages])
-
-    # Trigger suggestions generation immediately after history is updated
-    if moderation_category == "valid_agricultural":
-        logger.info(f"Triggering suggestions generation for session {session_id}")
-        import asyncio
-        asyncio.create_task(
-            create_suggestions(session_id, deps.lang_code, user_id, deps.query)
-        )
