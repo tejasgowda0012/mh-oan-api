@@ -51,11 +51,11 @@ async def create_suggestions(
         # Max wait time of 30 seconds (60 * 0.5s) to allow streaming to complete
         raw_history = initial_history
         for _ in range(60):
-            await asyncio.sleep(0.5)
             candidate = await _get_message_history(session_id)
             if len(candidate) > initial_len:
                 raw_history = candidate
                 break
+            await asyncio.sleep(0.5)
 
         history = trim_history(raw_history,
                           30_000,
