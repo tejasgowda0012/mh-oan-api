@@ -41,22 +41,7 @@ async def create_suggestions(
     logger.info(f"Getting suggestions for session {session_id}")
 
     try:
-        # Wait for the chat stream to complete and persist the current turn (user + assistant).
-        # update_message_history saves both atomically, so waiting for +2 new messages
-        # guarantees suggestions are based on the current turn, not the previous one.
-        import asyncio
-        initial_history = await _get_message_history(session_id)
-        initial_len = len(initial_history)
-
-        # Max wait time of 30 seconds (60 * 0.5s) to allow streaming to complete
-        raw_history = initial_history
-        for _ in range(60):
-            candidate = await _get_message_history(session_id)
-            if len(candidate) > initial_len:
-                raw_history = candidate
-                break
-            await asyncio.sleep(0.5)
-
+        raw_history = await _get_message_history(session_id)
         history = trim_history(raw_history,
                           30_000,
                           include_tool_calls=False,
