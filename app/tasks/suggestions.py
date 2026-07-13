@@ -41,6 +41,14 @@ async def create_suggestions(
     logger.info(f"Getting suggestions for session {session_id}")
 
     try:
+        from app.utils import get_cache
+        # Check if suggestions are allowed for this session (i.e. query moderation succeeded)
+        allowed = await get_cache(f"suggestions_allowed_{session_id}")
+        if allowed is not True:
+            logger.info(f"Suggestions not allowed for session {session_id} (moderation check failed/invalid query)")
+            await set_cache(f"suggestions_{session_id}_{target_lang}", [], ttl=SUGGESTIONS_CACHE_TTL)
+            return []
+
         raw_history = await _get_message_history(session_id)
         history = trim_history(raw_history,
                           30_000,
@@ -104,4 +112,5 @@ async def create_suggestions(
         
     except Exception as e:
         logger.error(f"Error creating suggestions: {str(e)}")
-        return [] 
+        await set_cache(f"suggestions_{session_id}_{target_lang}", [], ttl=SUGGESTIONS_CACHE_TTL)
+        return []

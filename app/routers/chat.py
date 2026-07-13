@@ -1,11 +1,13 @@
 from fastapi import APIRouter, Depends, BackgroundTasks, Request
 from fastapi.responses import StreamingResponse
+from starlette.background import BackgroundTask
 from app.auth.jwt_auth import get_current_user
 from app.services.chat import stream_chat_messages
 from app.utils import _get_message_history
 from app.models.requests import ChatRequest
 from app.core.limiter import limiter
 from helpers.utils import get_logger
+from app.tasks.suggestions import create_suggestions
 import uuid
 
 logger = get_logger(__name__)
@@ -52,7 +54,13 @@ async def chat_endpoint(
             user_id=chat_request.user_id,
             history=history,
             user_info=user_info,
-            background_tasks=background_tasks
         ),
-        media_type="text/event-stream"
+        media_type="text/event-stream",
+        background=BackgroundTask(
+            create_suggestions,
+            session_id,
+            chat_request.target_lang,
+            chat_request.user_id,
+            chat_request.query
+        )
     )
