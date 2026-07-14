@@ -12,7 +12,12 @@ from agents.tools.terms import search_terms
 from agents.tools.scheme_info import get_scheme_codes, get_scheme_info, get_multiple_schemes_info
 from agents.tools.staff_contact import contact_agricultural_staff
 from agents.tools.pest_detection import detect_crop_pest
-from agents.tools.memory_tool import recall_farmer_memory, save_farmer_memory
+from agents.tools.memory_tool import (
+    delete_farmer_memory,
+    edit_farmer_memory,
+    recall_farmer_memory,
+    save_farmer_memory,
+)
 from agents.tools.profile_tool import update_farmer_profile
 
 TOOLS = [
@@ -34,6 +39,18 @@ TOOLS = [
     ),
     Tool(
         save_farmer_memory,
+        takes_ctx=True,
+        docstring_format='auto',
+        require_parameter_descriptions=False,
+    ),
+    Tool(
+        edit_farmer_memory,
+        takes_ctx=True,
+        docstring_format='auto',
+        require_parameter_descriptions=False,
+    ),
+    Tool(
+        delete_farmer_memory,
         takes_ctx=True,
         docstring_format='auto',
         require_parameter_descriptions=False,

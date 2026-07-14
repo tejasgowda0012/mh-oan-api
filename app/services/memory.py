@@ -136,6 +136,42 @@ class MemoryService:
             )
         return self._client
 
+    @staticmethod
+    def _normalize_memory(memory: dict) -> dict:
+        """Return the cross-channel memory record shape used by chat and voice."""
+        return {
+            "id": memory.get("id"),
+            "memory": memory.get("memory"),
+            "user_id": memory.get("user_id"),
+            "created_at": memory.get("created_at"),
+            "updated_at": memory.get("updated_at"),
+        }
+
+    @staticmethod
+    def _format_memory(memory: dict) -> str:
+        memory_id = memory.get("id") or "unknown"
+        text = memory.get("memory") or ""
+        return f"- Memory ID: {memory_id}\n  Memory: {text}"
+
+    async def _get_owned_memory(
+        self,
+        client,
+        user_id: str,
+        memory_id: str,
+    ) -> Optional[dict]:
+        """Fetch a memory only when it belongs to the current farmer."""
+        try:
+            memory = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: client.get(memory_id),
+            )
+        except Exception:
+            logger.warning("memory.get failed for id %s", memory_id, exc_info=True)
+            return None
+        if not memory or memory.get("user_id") != user_id:
+            return None
+        return self._normalize_memory(memory)
+
     async def search(
         self,
         query: str,
@@ -149,7 +185,12 @@ class MemoryService:
         try:
             results = await asyncio.get_event_loop().run_in_executor(
                 None,
-                lambda: client.search(query, filters={"user_id": user_id}, limit=top_k),
+                lambda: client.search(
+                    query,
+                    filters={"user_id": user_id},
+                    top_k=top_k,
+                    threshold=threshold,
+                ),
             )
             memories = results if isinstance(results, list) else results.get("results", [])
             if not memories:
@@ -157,7 +198,10 @@ class MemoryService:
             filtered = [m for m in memories if m.get("score", 1.0) >= threshold]
             if not filtered:
                 return "No relevant past memories found."
-            return "\n".join(f"- {m['memory']}" for m in filtered)
+            return "\n".join(
+                self._format_memory(self._normalize_memory(memory))
+                for memory in filtered
+            )
         except Exception:
             logger.warning("memory.search failed for user %s", user_id, exc_info=True)
             return ""
@@ -169,17 +213,10 @@ class MemoryService:
         try:
             results = await asyncio.get_event_loop().run_in_executor(
                 None,
-                lambda: client.get_all(filters={"user_id": user_id}, limit=200),
+                lambda: client.get_all(filters={"user_id": user_id}, top_k=200),
             )
             memories = results if isinstance(results, list) else results.get("results", [])
-            return [
-                {
-                    "memory": m.get("memory"),
-                    "created_at": m.get("created_at"),
-                    "updated_at": m.get("updated_at"),
-                }
-                for m in memories
-            ]
+            return [self._normalize_memory(memory) for memory in memories]
         except Exception:
             logger.warning("get_all failed for user %s", user_id, exc_info=True)
             return []
@@ -222,6 +259,72 @@ class MemoryService:
         except Exception:
             logger.error("add_fact failed for user %s", user_id, exc_info=True)
             return "Could not save memory right now. Please try again later."
+
+    async def update_memory(
+        self,
+        user_id: str,
+        memory_id: str,
+        new_memory: str,
+    ) -> str:
+        """Update one episodic memory after verifying farmer ownership."""
+        client = self._get_client()
+        if not client or not user_id:
+            return "Memory storage is not available for this session."
+        target_id = (memory_id or "").strip()
+        text = (new_memory or "").strip()
+        if not target_id:
+            return "Memory ID is required."
+        if not text:
+            return "Updated memory text cannot be empty."
+
+        owned_memory = await self._get_owned_memory(client, user_id, target_id)
+        if not owned_memory:
+            return "Memory not found for this farmer."
+
+        try:
+            await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: client.update(target_id, data=text),
+            )
+            logger.info("update_memory user=%s memory_id=%s", user_id, target_id)
+            return "Updated farmer memory."
+        except Exception:
+            logger.error(
+                "update_memory failed for user %s memory_id %s",
+                user_id,
+                target_id,
+                exc_info=True,
+            )
+            return "Could not update memory right now. Please try again later."
+
+    async def delete_memory(self, user_id: str, memory_id: str) -> str:
+        """Delete one episodic memory after verifying farmer ownership."""
+        client = self._get_client()
+        if not client or not user_id:
+            return "Memory storage is not available for this session."
+        target_id = (memory_id or "").strip()
+        if not target_id:
+            return "Memory ID is required."
+
+        owned_memory = await self._get_owned_memory(client, user_id, target_id)
+        if not owned_memory:
+            return "Memory not found for this farmer."
+
+        try:
+            await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: client.delete(target_id),
+            )
+            logger.info("delete_memory user=%s memory_id=%s", user_id, target_id)
+            return "Deleted farmer memory."
+        except Exception:
+            logger.error(
+                "delete_memory failed for user %s memory_id %s",
+                user_id,
+                target_id,
+                exc_info=True,
+            )
+            return "Could not delete memory right now. Please try again later."
 
     async def delete_all(self, user_id: str) -> int:
         client = self._get_client()
