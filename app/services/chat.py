@@ -31,6 +31,8 @@ from app.utils import (
     filter_thinking_from_history,
 )
 from app.tasks.suggestions import create_suggestions
+from app.services.identity import resolve_memory_user_id
+from app.services.memory_context import preload_saved_farmer_context
 from agents.deps import FarmerContext
 
 logger = get_logger(__name__)
@@ -86,6 +88,8 @@ async def stream_chat_messages(
     span exists across StreamingResponse/async-generator yields.
     """
     user_claims = user_info if isinstance(user_info, dict) else {}
+    memory_user_id = resolve_memory_user_id(user_id, user_claims)
+    logger.info("memory_user_id=%s for session %s", memory_user_id, session_id)
 
     logger.info(
         "User info: farmer_id=%s unique_id=%s mobile=%s name=%s",
@@ -136,6 +140,7 @@ async def stream_chat_messages(
                 farmer_id=user_claims.get("farmer_id"),
                 unique_id=user_claims.get("unique_id"),
                 user_info=user_claims,
+                memory_user_id=memory_user_id,
             )
 
             message_pairs = "\n\n".join(format_message_pairs(history, 3))
@@ -148,12 +153,23 @@ async def stream_chat_messages(
             # Moderation — child span via @observe (regular coroutine, safe)
             # ------------------------------------------------------------------
             moderation_data = await _run_moderation(
-                user_message=f"{last_response}{deps.get_user_message()}",
+                user_message=f"{last_response}{deps.get_moderation_message()}",
                 session_id=session_id,
             )
             logger.info(f"Moderation data: {moderation_data}")
             deps.update_moderation_str(str(moderation_data))
 
+            if moderation_data.category == "valid_agricultural" and memory_user_id:
+                saved_context = await preload_saved_farmer_context(memory_user_id, query)
+                deps.saved_farmer_context = saved_context
+                logger.info(
+                    "memory_user_id=%s saved_context_chars=%s session=%s",
+                    memory_user_id,
+                    len(saved_context) if saved_context else 0,
+                    session_id,
+                )
+
+            # Suggestions will be triggered in _run_agrinet_stream after streaming finishes.
             # ------------------------------------------------------------------
             # History prep
             # ------------------------------------------------------------------

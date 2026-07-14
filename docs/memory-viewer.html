@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Farmer Memory · MahaVistaar Chat</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: rgb(33, 44, 41);
+      --surface: rgb(43, 59, 55);
+      --line: rgb(54, 73, 69);
+      --line-strong: rgb(70, 92, 87);
+      --ink: #eef1e9;
+      --ink-soft: #b3bcb5;
+      --ink-faint: #828d86;
+      --brand: #5cba7d;
+      --brand-dark: #4aa86c;
+      --brand-tint: rgb(36, 52, 48);
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.35);
+      --shadow-soft: 0 1px 2px rgba(0,0,0,.25);
+      --radius: 12px;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+    .page { max-width: 660px; margin: 0 auto; padding: 56px 24px 80px; }
+
+    /* Header */
+    .brand { display: flex; align-items: center; gap: 11px; margin-bottom: 8px; }
+    .brand .mark {
+      width: 44px; height: 44px; flex: none; display: grid; place-items: center;
+      border-radius: 50%; background: #fff;
+      box-shadow: 0 2px 8px rgba(33,44,41,.14);
+    }
+    .brand .mark svg { width: 44px; height: 44px; display: block; }
+    .brand .title { font-size: 18px; font-weight: 700; letter-spacing: -.01em; color: var(--ink); }
+    .brand .badge {
+      font-size: 11px; font-weight: 600; color: var(--brand-dark);
+      background: var(--brand-tint); border-radius: 999px; padding: 3px 9px;
+      letter-spacing: .02em; text-transform: uppercase;
+    }
+    @media (prefers-color-scheme: dark) { .brand .badge { color: var(--brand); } }
+    h1 { font-size: 28px; font-weight: 700; letter-spacing: -.02em; margin: 22px 0 8px; }
+    .lede { color: var(--ink-soft); font-size: 15px; line-height: 1.6; margin: 0 0 28px; max-width: 48ch; }
+
+    /* Search */
+    .search {
+      display: flex; gap: 10px; background: var(--surface);
+      border: 1px solid var(--line); border-radius: 14px; padding: 7px;
+      box-shadow: var(--shadow-soft); transition: border-color .15s, box-shadow .15s;
+    }
+    .search:focus-within { border-color: var(--brand); box-shadow: 0 0 0 4px var(--brand-tint); }
+    .search .field { position: relative; flex: 1; display: flex; align-items: center; }
+    .search .field svg { position: absolute; left: 14px; width: 18px; height: 18px; color: var(--ink-faint); pointer-events: none; }
+    .search input {
+      width: 100%; border: 0; background: transparent; color: var(--ink);
+      font-size: 16px; font-family: inherit; padding: 12px 12px 12px 42px; outline: none;
+    }
+    .search input::placeholder { color: var(--ink-faint); }
+    .search button {
+      border: 0; border-radius: 9px; cursor: pointer; font-family: inherit;
+      font-size: 15px; font-weight: 600; color: #fff; padding: 0 22px;
+      background: linear-gradient(150deg, var(--brand), var(--brand-dark));
+      transition: filter .15s, transform .05s;
+    }
+    .search button:hover { filter: brightness(1.05); }
+    .search button:active { transform: translateY(1px); }
+    .search button:disabled { opacity: .55; cursor: default; filter: none; }
+
+    /* Status row */
+    .status { display: flex; align-items: center; gap: 10px; min-height: 24px; margin: 26px 2px 14px; }
+    .status .count { font-size: 14px; font-weight: 600; color: var(--ink); }
+    .status .uid {
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12px;
+      color: var(--ink-faint); background: var(--surface); border: 1px solid var(--line);
+      border-radius: 7px; padding: 3px 8px;
+    }
+    .status .err { color: #c0392b; font-size: 14px; font-weight: 500; }
+    @media (prefers-color-scheme: dark) { .status .err { color: #ff8c7a; } }
+    .status .refresh {
+      margin-left: auto; display: none; align-items: center; justify-content: center; cursor: pointer;
+      color: var(--ink-soft); background: var(--surface); border: 1px solid var(--line);
+      border-radius: 9px; width: 34px; height: 34px; padding: 0;
+      transition: border-color .15s, color .15s, background .15s;
+    }
+    .status .refresh.show { display: inline-flex; }
+    .status .refresh:hover { color: var(--brand-dark); border-color: var(--brand); background: var(--brand-tint); }
+    @media (prefers-color-scheme: dark) { .status .refresh:hover { color: var(--brand); } }
+    .status .refresh:disabled { opacity: .55; cursor: default; }
+    .status .refresh svg { width: 15px; height: 15px; }
+    .status .refresh.spin svg { animation: spin .7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Memory cards */
+    .cards { display: flex; flex-direction: column; gap: 12px; }
+    .card {
+      background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+      padding: 18px 20px; box-shadow: var(--shadow); display: flex; gap: 14px;
+      animation: rise .35s cubic-bezier(.2,.7,.3,1) both;
+    }
+    .card .dot { flex: none; width: 9px; height: 9px; border-radius: 50%; margin-top: 6px;
+      background: var(--brand); box-shadow: 0 0 0 4px var(--brand-tint); }
+    .card .body { flex: 1; min-width: 0; }
+    .card .text { font-size: 15px; line-height: 1.55; color: var(--ink); font-weight: 450; }
+    .card .when { margin-top: 9px; font-size: 12.5px; color: var(--ink-faint); display: flex; align-items: center; gap: 6px; }
+    .card .when svg { width: 13px; height: 13px; }
+    @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+    .section { margin: 28px 0 10px; }
+    .section h2 { font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-soft); margin: 0 0 12px; }
+    .profile-card {
+      background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+      padding: 18px 20px; box-shadow: var(--shadow-soft);
+    }
+    .profile-card .snap { font-size: 15px; line-height: 1.55; white-space: pre-wrap; color: var(--ink); }
+    .profile-grid { display: grid; gap: 8px 16px; font-size: 14px; margin-top: 12px; }
+    .profile-grid dt { color: var(--ink-faint); font-weight: 500; }
+    .profile-grid dd { margin: 0; color: var(--ink); }
+    .card.episodic .dot { background: #6eb5ff; box-shadow: 0 0 0 4px rgba(110,181,255,.2); }
+
+
+    /* States */
+    .state { text-align: center; padding: 52px 20px; color: var(--ink-soft); }
+    .state .ic { width: 48px; height: 48px; margin: 0 auto 14px; color: var(--ink-faint);
+      background: var(--surface); border: 1px solid var(--line); border-radius: 14px; display: grid; place-items: center; }
+    .state .ic svg { width: 24px; height: 24px; }
+    .state .h { font-size: 15px; font-weight: 600; color: var(--ink); margin-bottom: 4px; }
+    .state .p { font-size: 14px; line-height: 1.5; }
+
+    /* Skeletons */
+    .skel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 20px; box-shadow: var(--shadow-soft); }
+    .skel .bar { height: 13px; border-radius: 6px; background: linear-gradient(90deg, var(--line) 25%, var(--line-strong) 37%, var(--line) 63%); background-size: 400% 100%; animation: shimmer 1.4s infinite; }
+    .skel .bar + .bar { margin-top: 10px; }
+    @keyframes shimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
+
+    .foot { margin-top: 40px; text-align: center; font-size: 12.5px; color: var(--ink-faint); }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="brand">
+      <span class="title">MahaVISTAAR</span>
+      <span class="badge">Farmer context</span>
+    </div>
+
+    <h1>Farmer Memory Lookup</h1>
+    <p class="lede">Look up a farmer by phone to see their saved farm profile and any chat notes from past sessions.</p>
+
+    <form class="search" id="form" autocomplete="off">
+      <span class="field">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/>
+        </svg>
+        <input id="phone" type="tel" inputmode="numeric" placeholder="e.g. 9876543210" aria-label="Farmer phone number" />
+      </span>
+      <button type="submit" id="go">Look up</button>
+    </form>
+
+    <div class="status">
+      <span id="statusText"></span>
+      <button type="button" class="refresh" id="refresh" title="Refresh memories" aria-label="Refresh memories">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+      </button>
+    </div>
+    <div id="results"><p class="lede" style="margin:12px 0 0;font-size:14px">Enter a phone number and click <strong>Look up</strong> (or open <code>?phone=9191919191</code>).</p></div>
+  </main>
+
+  <script>
+    const DEFAULT_API = "http://127.0.0.1:8000/api";
+    const API_BASE = new URLSearchParams(location.search).get("api") || DEFAULT_API;
+
+    const form = document.getElementById("form");
+    const phone = document.getElementById("phone");
+    const go = document.getElementById("go");
+    const statusEl = document.getElementById("statusText");
+    const refresh = document.getElementById("refresh");
+    const results = document.getElementById("results");
+    let lastPhone = null;
+
+    const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;" }[c]));
+
+    function relTime(iso) {
+      if (!iso) return "";
+      const d = new Date(iso);
+      if (isNaN(d)) return "";
+      const secs = Math.round((Date.now() - d.getTime()) / 1000);
+      const units = [["year",31536000],["month",2592000],["week",604800],["day",86400],["hour",3600],["minute",60]];
+      for (const [name, s] of units) {
+        const v = Math.floor(secs / s);
+        if (v >= 1) return `${v} ${name}${v > 1 ? "s" : ""} ago`;
+      }
+      return "just now";
+    }
+    const fmtDate = (iso) => { const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }); };
+
+    const clockIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>`;
+
+    function showSkeletons() {
+      statusEl.innerHTML = `<span class="count" style="color:var(--ink-faint)">Searching…</span>`;
+      results.innerHTML = `<div class="cards">${Array.from({length:3}).map(() =>
+        `<div class="skel"><div class="bar" style="width:90%"></div><div class="bar" style="width:60%"></div></div>`).join("")}</div>`;
+    }
+
+    function stateEmpty() {
+      results.innerHTML = `<div class="state">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-6l-2-3H5a2 2 0 0 0-2 3z"/></svg></div>
+        <div class="h">No saved context</div>
+        <div class="p">No structured profile or episodic memories for this phone yet.</div>
+      </div>`;
+    }
+    function stateError(msg) {
+      statusEl.innerHTML = `<span class="err">${esc(msg)}</span>`;
+      results.innerHTML = `<div class="state">
+        <div class="ic" style="color:#c0392b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg></div>
+        <div class="h">Couldn't load farmer context</div>
+        <div class="p">${esc(msg)}</div>
+      </div>`;
+    }
+
+    function profileHasData(prof) {
+      if (!prof) return false;
+      return !!(prof.village || prof.district || prof.crops?.length || prof.land_area_acres || prof.irrigation || prof.notes?.length);
+    }
+
+    function renderProfileSection(pdata) {
+      const prof = pdata.profile;
+      if (!profileHasData(prof)) {
+        return `<div class="section"><h2>Structured profile</h2><div class="profile-card" style="color:var(--ink-soft);font-size:14px">No structured profile stored.</div></div>`;
+      }
+      const rows = [];
+      if (prof.village) rows.push(["Village", prof.village]);
+      if (prof.district) rows.push(["District", prof.district]);
+      if (prof.state) rows.push(["State", prof.state]);
+      if (prof.crops?.length) rows.push(["Crops", prof.crops.map(c => c.name + (c.area_acres ? ` (${c.area_acres} ac)` : "")).join(", ")]);
+      if (prof.land_area_acres) rows.push(["Land", `${prof.land_area_acres} acres`]);
+      if (prof.irrigation) rows.push(["Irrigation", prof.irrigation]);
+      const inner = `<dl class="profile-grid">${rows.map(([k,v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl>`;
+      return `<div class="section"><h2>Structured profile</h2><div class="profile-card">${inner}</div></div>`;
+    }
+
+    function renderEpisodicSection(mdata) {
+      const list = mdata.memories || [];
+      if (!list.length) return "";
+      const cards = list.map((m, i) => {
+        const when = m.updated_at || m.created_at;
+        const rel = relTime(when), abs = fmtDate(when);
+        return `<div class="card episodic" style="animation-delay:${i * 50}ms">
+          <span class="dot"></span>
+          <div class="body">
+            <div class="text">${esc(m.memory || "")}</div>
+            ${when ? `<div class="when">${clockIcon}<span title="${esc(abs)}">${esc(rel)}</span></div>` : ""}
+          </div>
+        </div>`;
+      }).join("");
+      return `<div class="section"><h2>Episodic memories</h2><div class="cards">${cards}</div></div>`;
+    }
+
+
+    async function load(opts = {}) {
+      const p = (opts.phone ?? phone.value).trim();
+      if (!p) { phone.focus(); return; }
+      lastPhone = p;
+      go.disabled = true;
+      refresh.disabled = true;
+      refresh.classList.toggle("spin", opts.silent === true);
+      if (!opts.silent) showSkeletons();
+      try {
+        const q = `phone=${encodeURIComponent(p)}`;
+        const [profRes, memRes] = await Promise.all([
+          fetch(`${API_BASE}/profile?${q}`),
+          fetch(`${API_BASE}/memories?${q}`),
+        ]);
+        const pdata = await profRes.json().catch(() => ({}));
+        const mdata = await memRes.json().catch(() => ({}));
+        if (!profRes.ok && !memRes.ok) {
+          stateError(pdata.detail || mdata.detail || `Request failed (${profRes.status})`);
+          return;
+        }
+        const uid = pdata.user_id || mdata.user_id;
+        const nEp = mdata.count || (mdata.memories || []).length;
+        const hasProf = profileHasData(pdata.profile);
+        const epLabel = nEp > 0 ? ` · ${nEp} chat note${nEp === 1 ? "" : "s"}` : "";
+        statusEl.innerHTML =
+          `<span class="count">${hasProf ? "Profile on file" : "No profile"}${epLabel}</span>` +
+          (uid ? `<span class="uid" title="hashed user_id">${esc(uid.slice(0,12))}…</span>` : "");
+
+        if (!hasProf && nEp === 0) { stateEmpty(); return; }
+        results.innerHTML = renderProfileSection(pdata) + (nEp > 0 ? renderEpisodicSection(mdata) : "");
+      } catch (e) {
+        stateError("Could not reach the backend. Is it running on " + API_BASE + "?");
+      } finally {
+        go.disabled = false;
+        refresh.disabled = false;
+        refresh.classList.remove("spin");
+        refresh.classList.add("show");
+      }
+    }
+
+    form.addEventListener("submit", (e) => { e.preventDefault(); load(); });
+    refresh.addEventListener("click", () => { if (lastPhone) load({ phone: lastPhone, silent: true }); });
+
+    const qsPhone = new URLSearchParams(location.search).get("phone");
+    if (qsPhone && qsPhone.trim()) {
+      phone.value = qsPhone.trim();
+      load({ phone: qsPhone.trim() });
+    }
+
+  </script>
+</body>
+</html>
