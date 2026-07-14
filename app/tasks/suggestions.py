@@ -2,6 +2,7 @@
 Tasks for creating conversation suggestions.
 """
 
+import asyncio
 import os
 
 from langfuse import get_client, propagate_attributes
@@ -41,7 +42,17 @@ async def create_suggestions(
     logger.info(f"Getting suggestions for session {session_id}")
 
     try:
-        raw_history = await _get_message_history(session_id)
+        initial_history = await _get_message_history(session_id)
+        initial_len = len(initial_history)
+
+        raw_history = initial_history
+        for _ in range(60):
+            candidate = await _get_message_history(session_id)
+            if len(candidate) > initial_len:
+                raw_history = candidate
+                break
+            await asyncio.sleep(0.5)
+
         history = trim_history(raw_history,
                           30_000,
                           include_tool_calls=False,
@@ -104,4 +115,5 @@ async def create_suggestions(
         
     except Exception as e:
         logger.error(f"Error creating suggestions: {str(e)}")
-        return [] 
+        await set_cache(f"suggestions_{session_id}_{target_lang}", [], ttl=SUGGESTIONS_CACHE_TTL)
+        return []

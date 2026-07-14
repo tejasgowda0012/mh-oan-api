@@ -52,7 +52,7 @@ async def chat_endpoint(
             user_id=chat_request.user_id,
             history=history,
             user_info=user_info,
-            background_tasks=background_tasks
+            background_tasks=background_tasks,
         ),
-        media_type="text/event-stream"
+        media_type="text/event-stream",
     )

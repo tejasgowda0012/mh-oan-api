@@ -154,8 +154,6 @@ async def stream_chat_messages(
             logger.info(f"Moderation data: {moderation_data}")
             deps.update_moderation_str(str(moderation_data))
 
-            # Suggestions will be triggered in _run_agrinet_stream after streaming finishes.
-
             # ------------------------------------------------------------------
             # History prep
             # ------------------------------------------------------------------
@@ -186,6 +184,15 @@ async def stream_chat_messages(
                     ):
                         full_output += chunk
                         yield chunk
+
+                if moderation_data.category == "valid_agricultural":
+                    logger.info(f"Triggering suggestions generation for session {session_id}")
+                    try:
+                        background_tasks.add_task(
+                            create_suggestions, session_id, target_lang, user_id, query
+                        )
+                    except Exception as e:
+                        logger.error(f"Error adding suggestions task: {str(e)}")
             finally:
                 # Set trace + root span output here (same OTel context as input).
                 # update_current_trace from nested async generators does not persist.
