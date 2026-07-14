@@ -35,11 +35,15 @@ async def recall_farmer_memory(ctx: RunContext[FarmerContext], query: str) -> st
     items = await memory_service.get_all(user_id)
     if items:
         items.sort(key=lambda m: m.get("created_at") or "", reverse=True)
-        recent = [m["memory"] for m in items[:3] if m.get("memory")]
+        recent = [
+            f"- Memory ID: {m.get('id')}\n  Memory: {m['memory']}"
+            for m in items[:3]
+            if m.get("id") and m.get("memory")
+        ]
         if recent:
             return (
                 "No exact match; most recent saved memories:\n"
-                + "\n---\n".join(recent)
+                + "\n".join(recent)
             )
 
     return "No relevant past memories found."
@@ -61,3 +65,47 @@ async def save_farmer_memory(ctx: RunContext[FarmerContext], memory: str) -> str
     from app.services.memory import memory_service
 
     return await memory_service.add_fact(user_id, memory, source="save_farmer_memory", infer=False)
+
+
+async def edit_farmer_memory(
+    ctx: RunContext[FarmerContext], memory_id: str, new_memory: str
+) -> str:
+    """Correct one previously saved episodic farmer memory.
+
+    First call `recall_farmer_memory` to obtain the exact memory ID. Use only when
+    the farmer explicitly corrects a saved note. If multiple memories could match,
+    ask the farmer which one they mean before calling this tool. Structured farm
+    facts belong in `update_farmer_profile` instead.
+
+    Args:
+        memory_id: Opaque ID returned by `recall_farmer_memory`; never guess it.
+        new_memory: Complete corrected memory text that should replace the old text.
+    """
+    user_id = ctx.deps.memory_user_id
+    if not user_id:
+        return "No farmer memory available for this session."
+
+    from app.services.memory import memory_service
+
+    return await memory_service.update_memory(user_id, memory_id, new_memory)
+
+
+async def delete_farmer_memory(
+    ctx: RunContext[FarmerContext], memory_id: str
+) -> str:
+    """Delete one previously saved episodic farmer memory.
+
+    First call `recall_farmer_memory` to obtain the exact memory ID. Use only after
+    the farmer explicitly asks to forget or delete that memory. If multiple memories
+    could match, ask which one they mean. Never guess an ID or delete unrelated facts.
+
+    Args:
+        memory_id: Opaque ID returned by `recall_farmer_memory`; never guess it.
+    """
+    user_id = ctx.deps.memory_user_id
+    if not user_id:
+        return "No farmer memory available for this session."
+
+    from app.services.memory import memory_service
+
+    return await memory_service.delete_memory(user_id, memory_id)

@@ -20,7 +20,12 @@ from agents.tools.cross_network import (
     pmkisan_installment_status,
     smam_application_status,
 )
-from agents.tools.memory_tool import recall_farmer_memory, save_farmer_memory
+from agents.tools.memory_tool import (
+    delete_farmer_memory,
+    edit_farmer_memory,
+    recall_farmer_memory,
+    save_farmer_memory,
+)
 from agents.tools.profile_tool import update_farmer_profile
 
 TOOLS = [
@@ -41,6 +46,18 @@ TOOLS = [
     ),
     Tool(
         save_farmer_memory,
+        takes_ctx=True,
+        docstring_format='auto',
+        require_parameter_descriptions=False,
+    ),
+    Tool(
+        edit_farmer_memory,
+        takes_ctx=True,
+        docstring_format='auto',
+        require_parameter_descriptions=False,
+    ),
+    Tool(
+        delete_farmer_memory,
         takes_ctx=True,
         docstring_format='auto',
         require_parameter_descriptions=False,
