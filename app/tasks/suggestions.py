@@ -53,6 +53,11 @@ async def create_suggestions(
             await set_cache(f"suggestions_{session_id}_{target_lang}", [], ttl=SUGGESTIONS_CACHE_TTL)
             return []
 
+        if len(format_message_pairs(history)) < 2:
+            logger.info(f"First response for session {session_id}, skipping suggestions")
+            await set_cache(f"suggestions_{session_id}_{target_lang}", [], ttl=SUGGESTIONS_CACHE_TTL)
+            return []
+
         message_pairs = "\n\n".join(format_message_pairs(history, 1))
         target_lang_name = Language.get(target_lang).display_name(target_lang)
         message = (
