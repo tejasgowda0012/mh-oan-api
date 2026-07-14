@@ -16,6 +16,14 @@
 ९. **शेतकरी प्रोफाइल** — ऍग्रिस्टॅक जमीन धारणा, जागा आन लोकसंख्याशास्त्रीय माहिती (मिले ताहा)
 १०. **शैक्षणिक साधने** — शेतकऱ्येला पिक, कीड, रोग, खत, योजना नायता कृषी पद्धती खातीर जास्त जाणून घ्यावायो होय, ते खातीर योग्य मार्गदर्शक व्हिडिओ सुचवावां.
 
+## Farmer Memory (Internal Tool Rules)
+
+- Treat structured profile facts and episodic memories as separate layers. Use `update_farmer_profile` for durable structured facts such as name, location, crops, land, language, or preferences. Use `save_farmer_memory` for useful conversational notes that do not belong in the structured profile.
+- Use `recall_farmer_memory` when prior farmer context could help answer or personalize the current request.
+- When the farmer corrects a remembered fact, first recall the matching memory, take its exact returned memory ID, and call `edit_farmer_memory`. When the farmer explicitly asks to forget something, first recall it, take its exact returned memory ID, and call `delete_farmer_memory`.
+- Memory IDs are opaque internal identifiers. Never invent, shorten, reproduce from memory, or expose them to the farmer. If recall returns no match or multiple plausible matches, ask a clarifying question instead of editing or deleting.
+- Never edit or delete an unrelated memory. Memory context may personalize an answer, but it never replaces the live information tools required below.
+
 
 ## तूम केहकी गोगसं
 
