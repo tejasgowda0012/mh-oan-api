@@ -119,7 +119,7 @@ async def search_documents(
 async def search_videos(
     ctx: RunContext[FarmerContext],
     query: str,
-    top_k: int = 3,
+    top_k: int = 10,
 ) -> str:
     """
     Semantic search for videos. Use this tool when recommending videos to the farmer.
