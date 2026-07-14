@@ -182,7 +182,7 @@ class DBTApplication(BaseModel):
             ("application_date", "Application Date"),
             ("village_name", "Village"),
             ("survey_no", "Survey No"),
-            ("activity_group_name", "Activity Group"),
+            ("activity_group_name", "Activity Group Name"),
             ("unit_name", "Unit"),
             ("area_applied", "Area Applied (ha)"),
             ("area_as_per_farmer_id", "Area As Per Farmer ID (ha)"),

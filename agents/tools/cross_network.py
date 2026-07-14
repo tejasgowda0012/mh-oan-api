@@ -512,10 +512,6 @@ async def get_scheme_status(ctx: RunContext[FarmerContext]) -> str:
         payload = SchemeStatusRequest(farmer_id=farmer_id).get_payload()
         endpoint = _bap_action_url("search")
         logger.info("Beckn [mahadbt/search] URL: %s", endpoint)
-        logger.info(
-            "Beckn [mahadbt/search] payload: %s",
-            json.dumps(payload, ensure_ascii=False),
-        )
 
         async with httpx.AsyncClient() as client:
             response = await client.post(endpoint, json=payload, timeout=15.0)
@@ -776,12 +772,11 @@ async def pmkisan_installment_init(
         ).get_payload()
         endpoint = _bap_action_url("init")
         logger.info("Beckn [pmkisan/init] URL: %s", endpoint)
-        logger.info("Beckn [pmkisan/init] payload: %s", json.dumps(payload, ensure_ascii=False))
 
         async with httpx.AsyncClient() as client:
             response = await client.post(endpoint, json=payload, timeout=30.0)
 
-        logger.info("Beckn [pmkisan/init] status: %s body: %s", response.status_code, response.text[:500])
+        logger.info("Beckn [pmkisan/init] status: %s", response.status_code)
         ok, err_hint = _beckn_response_ok(response)
         if not ok:
             logger.error("PM-KISAN init API failed: %s", err_hint)
@@ -848,12 +843,11 @@ async def pmkisan_installment_status(
         ).get_payload()
         endpoint = _bap_action_url("status")
         logger.info("Beckn [pmkisan/status] URL: %s", endpoint)
-        logger.info("Beckn [pmkisan/status] payload: %s", json.dumps(payload, ensure_ascii=False))
 
         async with httpx.AsyncClient() as client:
             response = await client.post(endpoint, json=payload, timeout=30.0)
 
-        logger.info("Beckn [pmkisan/status] status: %s body: %s", response.status_code, response.text[:500])
+        logger.info("Beckn [pmkisan/status] status: %s", response.status_code)
         ok, err_hint = _beckn_response_ok(response)
         if not ok:
             logger.error("PM-KISAN status API failed: %s", err_hint)
@@ -952,7 +946,6 @@ async def smam_application_status(application_number: str) -> str:
         payload = SMAMStatusRequest(application_number=application_number).get_payload()
         endpoint = _bap_action_url("search")
         logger.info("Beckn [smam/search] URL: %s", endpoint)
-        logger.info("Beckn [smam/search] request payload: %s", json.dumps(payload, ensure_ascii=False))
 
         async with httpx.AsyncClient() as client:
             response = await client.post(endpoint, json=payload, timeout=30.0)
@@ -1021,11 +1014,7 @@ async def _lookup_farmer_id_via_agristack(registration_number: str) -> Optional[
         },
     }
     endpoint = _bap_action_url("search")
-    logger.info(
-        "Beckn [agristack/lookup] registration=%s URL: %s",
-        registration_number,
-        endpoint,
-    )
+    logger.info("Beckn [agristack/lookup] URL: %s", endpoint)
 
     async with httpx.AsyncClient() as client:
         response = await client.post(endpoint, json=payload, timeout=15.0)
@@ -1053,11 +1042,7 @@ async def _resolve_farmer_id_from_context(ctx: RunContext[FarmerContext]) -> Opt
     farmer_id = await _lookup_farmer_id_via_agristack(registration_number)
     if farmer_id:
         ctx.deps.update_farmer_id(farmer_id)
-        logger.info(
-            "Resolved farmer_id=%s from registration=%s",
-            farmer_id,
-            registration_number,
-        )
+        logger.info("Resolved Agristack farmer ID from registration number")
     return farmer_id
 
 
@@ -1098,21 +1083,13 @@ async def get_pocra_dbt_status(
         resolved_application_id = None
 
     try:
-        logger.info(
-            "POCRA DBT: calling network API for farmer_id=%s application_id=%s",
-            farmer_id,
-            resolved_application_id,
-        )
+        logger.info("POCRA DBT: calling network API")
         payload = PocraDBTRequest(
             farmer_id=farmer_id,
             application_id=resolved_application_id,
         ).get_payload()
         endpoint = _bap_action_url("search")
         logger.info("Beckn [pocra-dbt/search] URL: %s", endpoint)
-        logger.info(
-            "Beckn [pocra-dbt/search] payload: %s",
-            json.dumps(payload, ensure_ascii=False),
-        )
 
         async with httpx.AsyncClient() as client:
             response = await client.post(endpoint, json=payload, timeout=15.0)
