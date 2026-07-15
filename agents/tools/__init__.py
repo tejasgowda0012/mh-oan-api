@@ -26,7 +26,7 @@ from agents.tools.memory_tool import (
     recall_farmer_memory,
     save_farmer_memory,
 )
-from agents.tools.profile_tool import update_farmer_profile
+from agents.tools.profile_tool import remove_farmer_profile_value, update_farmer_profile
 
 TOOLS = [
     # Search Terms
@@ -64,6 +64,12 @@ TOOLS = [
     ),
     Tool(
         update_farmer_profile,
+        takes_ctx=True,
+        docstring_format='auto',
+        require_parameter_descriptions=False,
+    ),
+    Tool(
+        remove_farmer_profile_value,
         takes_ctx=True,
         docstring_format='auto',
         require_parameter_descriptions=False,
