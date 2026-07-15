@@ -50,8 +50,13 @@ async def update_farmer_profile(
 ) -> str:
     """Save stable farm facts to the structured profile (location, crops, irrigation, land).
 
-    Use when the farmer explicitly states durable context — village, district, crop they grow,
-    acres, drip/canal irrigation. Do NOT use for mandi/weather/scheme answers or one-off questions.
+    You MUST call this in the same turn for every durable structured fact the farmer
+    explicitly states or corrects, even when the farmer did not ask you to remember
+    it or the message contains no question. Call once per fact: name, village,
+    district, state, preferred mandi, crop grown, acres, irrigation, soil type,
+    livestock, language, preferred call time, scheme participation, or a durable
+    note. Do NOT save facts inferred from a question or returned by another tool.
+    Do NOT use for live mandi/weather/scheme answers, secrets, identifiers, or OTPs.
 
     Args:
         field: Profile field (e.g. village, district, crop, irrigation, land_area_acres).
