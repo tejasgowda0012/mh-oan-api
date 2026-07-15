@@ -33,7 +33,7 @@ class FarmerContext(BaseModel):
     )
     saved_farmer_context: Optional[str] = Field(
         default=None,
-        description="Pre-loaded structured profile snapshot + episodic mem0 bullets (agrinet user message only).",
+        description="Structured profile snapshot pre-loaded on the first conversation turn.",
     )
     user_info: Dict[str, Any] = Field(default_factory=dict, description="Authenticated user metadata.")
 
@@ -105,9 +105,8 @@ class FarmerContext(BaseModel):
         if not self.saved_farmer_context or not str(self.saved_farmer_context).strip():
             return None
         return (
-            "**Saved farmer context (structured profile for location/crops/farm setup; "
-            "episodic lines are past chat topics — not live data; "
-            "do not re-ask for details already in the profile block):**\n"
+            "**Saved farmer profile (authoritative for saved location/crops/farm setup; "
+            "do not re-ask for details already in this profile):**\n"
             + self.saved_farmer_context.strip()
         )
 

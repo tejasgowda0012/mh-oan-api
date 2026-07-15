@@ -52,13 +52,13 @@ async def recall_farmer_memory(ctx: RunContext[FarmerContext], query: str) -> st
 async def save_farmer_memory(ctx: RunContext[FarmerContext], memory: str) -> str:
     """Save an episodic note about the farmer for future chats (mem0).
 
-    You MUST call this in the same turn when the farmer explicitly provides useful,
-    durable farmer-specific context that does not fit the structured profile, such
-    as an ongoing farm problem, open follow-up, durable preference, or past advice
-    topic. The farmer does not need to ask you to remember it. Do not use this for
-    name/village/district/crop/land/irrigation or other structured facts; call
-    `update_farmer_profile` for those. Do NOT save inferred facts, secrets, OTPs,
-    government identifiers, mandi prices, weather, or scheme details.
+    First call `recall_farmer_memory` with the candidate topic. Call this only when
+    recall shows no equivalent memory and the farmer explicitly provided useful,
+    durable context that does not fit the structured profile, such as an ongoing
+    farm problem, open follow-up, durable preference, or past advice topic. If an
+    existing memory is equivalent, do nothing. If one memory is clearly superseded,
+    call `edit_farmer_memory` instead. Do not use this for structured profile facts,
+    inferred facts, secrets, OTPs, identifiers, live data, or general knowledge.
 
     Args:
         memory: Clear factual sentence(s) to store, in English or Marathi.

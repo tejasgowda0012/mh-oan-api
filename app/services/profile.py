@@ -173,6 +173,52 @@ def merge_profile(existing: FarmerProfile, partial: dict) -> FarmerProfile:
     return FarmerProfile(**data)
 
 
+def remove_profile_value(
+    existing: FarmerProfile, field: str, value: str
+) -> tuple[FarmerProfile, bool]:
+    """Remove one matching value without disturbing unrelated profile data."""
+    data = existing.model_dump()
+    expected = str(value or "").strip().casefold()
+    if not expected:
+        return existing, False
+
+    changed = False
+    if field == "crops":
+        before = data.get("crops", [])
+        after = [
+            crop
+            for crop in before
+            if str(crop.get("name") or "").strip().casefold() != expected
+        ]
+        changed = len(after) != len(before)
+        data["crops"] = after
+    elif field in _LIST_FIELDS:
+        before = data.get(field, [])
+        after = [item for item in before if str(item).strip().casefold() != expected]
+        changed = len(after) != len(before)
+        data[field] = after
+    elif field in _SCALAR_FIELDS:
+        current = data.get(field)
+        current_text = str(current).strip().casefold() if current is not None else ""
+        expected_matches = current_text == expected
+        if field == "land_area_acres" and current is not None:
+            try:
+                numeric = float("".join(c for c in str(value) if c.isdigit() or c == "."))
+                expected_matches = float(current) == numeric
+            except (TypeError, ValueError):
+                expected_matches = False
+        if expected_matches:
+            data[field] = None
+            changed = True
+    else:
+        return existing, False
+
+    if not changed:
+        return existing, False
+    data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    return FarmerProfile(**data), True
+
+
 class ProfileStore:
     _INIT_RETRY_SECONDS = 60.0
 
@@ -264,6 +310,15 @@ class ProfileStore:
         merged = merge_profile(existing, partial)
         await self.save(merged)
         return merged
+
+    async def apply_removal(self, user_id: str, field: str, value: str) -> bool:
+        existing = await self.get(user_id)
+        if not existing:
+            return False
+        updated, changed = remove_profile_value(existing, field, value)
+        if changed:
+            await self.save(updated)
+        return changed
 
     async def get_snapshot(self, user_id: str) -> Optional[str]:
         profile = await self.get(user_id)

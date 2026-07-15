@@ -11,7 +11,7 @@ The chat reference implementation lives in:
 - `app/services/identity.py` — cross-channel farmer identity resolution.
 - `app/services/memory.py` — mem0 episodic storage and owned mutations.
 - `app/services/profile.py` — structured farmer profile storage.
-- `app/services/memory_context.py` — combined profile and episodic context.
+- `app/services/memory_context.py` — structured profile preload for a new conversation.
 - `agents/tools/memory_tool.py` — model-callable episodic operations.
 - `agents/tools/profile_tool.py` — model-callable structured updates.
 
@@ -126,6 +126,7 @@ All channels must expose equivalent operations, even if their local tool names d
 | Edit | `edit_farmer_memory` | Recall first, use the returned ID, verify ownership, then replace that one record. |
 | Delete | `delete_farmer_memory` | Recall first, use the returned ID, verify ownership, then delete that one record. |
 | Profile update | `update_farmer_profile` | Save durable structured facts instead of episodic notes. |
+| Profile removal | `remove_farmer_profile_value` | Remove only an explicitly retracted matching structured value. |
 
 ### Edit flow
 
@@ -150,11 +151,18 @@ An absent record and a record owned by another farmer must produce the same
 
 ## Prompting rules shared by chat and voice
 
+- Load the structured profile once at the beginning of a new conversation. Do not
+  bulk-inject episodic memories into the prompt.
+- Retrieve episodic memories on demand with recall when the current message contains
+  a memory candidate, references past context, or requests a correction/deletion.
+- Reconcile before writing: skip an equivalent memory, edit one clearly superseded
+  memory, and create only when no equivalent exists.
 - Save only farmer-specific, durable context—not live weather, mandi prices, scheme
   details, or retrieved documents.
 - Use the structured profile for location, crops, acreage, irrigation, and similar
   fields; use episodic memory for unstructured past-chat context.
 - Never guess a memory ID.
+- Remove structured values only when the farmer explicitly retracts a matching value.
 - Never edit or delete without an explicit farmer correction or forget request.
 - Ask for clarification when more than one saved memory could be the target.
 - Do not expose memory IDs in spoken or written farmer-facing responses.
