@@ -163,6 +163,7 @@ If the farmer may want one application in detail, end with a follow-up like:
 - Application Date: [date]
 - Village: [village]
 - Survey No: [if available]
+- Activity Group Name: [e.g. Protected Cultivation]
 - Area Applied: [ha]
 - Pre-sanction Amount: [₹]
 - Remark / Reason: [only if present]

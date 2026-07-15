@@ -42,6 +42,7 @@ async def create_suggestions(
 
     try:
         raw_history = await _get_message_history(session_id)
+
         history = trim_history(raw_history,
                           30_000,
                           include_tool_calls=False,
@@ -104,4 +105,5 @@ async def create_suggestions(
         
     except Exception as e:
         logger.error(f"Error creating suggestions: {str(e)}")
-        return [] 
+        await set_cache(f"suggestions_{session_id}_{target_lang}", [], ttl=SUGGESTIONS_CACHE_TTL)
+        return []
