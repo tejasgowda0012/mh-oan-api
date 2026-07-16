@@ -1,4 +1,5 @@
 from pydantic_ai import RunContext
+from langfuse import observe
 
 from agents.deps import FarmerContext
 from helpers.utils import get_logger
@@ -6,6 +7,7 @@ from helpers.utils import get_logger
 logger = get_logger(__name__)
 
 
+@observe(name="tool:recall_farmer_memory", as_type="tool")
 async def recall_farmer_memory(ctx: RunContext[FarmerContext], query: str) -> str:
     """Search stored memories about this farmer from past chats.
 
@@ -49,6 +51,7 @@ async def recall_farmer_memory(ctx: RunContext[FarmerContext], query: str) -> st
     return "No relevant past memories found."
 
 
+@observe(name="tool:save_farmer_memory", as_type="tool")
 async def save_farmer_memory(ctx: RunContext[FarmerContext], memory: str) -> str:
     """Save an episodic note about the farmer for future chats (mem0).
 
@@ -72,6 +75,7 @@ async def save_farmer_memory(ctx: RunContext[FarmerContext], memory: str) -> str
     return await memory_service.add_fact(user_id, memory, source="save_farmer_memory", infer=False)
 
 
+@observe(name="tool:edit_farmer_memory", as_type="tool")
 async def edit_farmer_memory(
     ctx: RunContext[FarmerContext], memory_id: str, new_memory: str
 ) -> str:
@@ -95,6 +99,7 @@ async def edit_farmer_memory(
     return await memory_service.update_memory(user_id, memory_id, new_memory)
 
 
+@observe(name="tool:delete_farmer_memory", as_type="tool")
 async def delete_farmer_memory(
     ctx: RunContext[FarmerContext], memory_id: str
 ) -> str:
