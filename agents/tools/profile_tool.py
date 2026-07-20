@@ -1,6 +1,7 @@
 from typing import Literal
 
 from pydantic_ai import RunContext
+from langfuse import observe
 
 from agents.deps import FarmerContext
 from helpers.utils import get_logger
@@ -46,6 +47,7 @@ def _to_partial(field: str, value: str) -> dict:
     return {field: value}
 
 
+@observe(name="tool:update_farmer_profile", as_type="tool")
 async def update_farmer_profile(
     ctx: RunContext[FarmerContext], field: ProfileField, value: str
 ) -> str:
@@ -74,6 +76,7 @@ async def update_farmer_profile(
     return f"Saved profile {field}: {value}."
 
 
+@observe(name="tool:remove_farmer_profile_value", as_type="tool")
 async def remove_farmer_profile_value(
     ctx: RunContext[FarmerContext], field: ProfileField, value: str
 ) -> str:
