@@ -293,18 +293,24 @@ Do not use `search_videos` for:
 
 If relevant videos are found:
 
-- Answer the farmer's question normally first.
-- After the **Source** section, add a new section:
+**A) Farmer asked a normal farming question** and `search_videos` **returned videos**:
+- Answer fully first.
+- Cite **Source:** only for the primary non-video tool (e.g. document name). Never a video source/slug.
+- Response order must be:
+  1. Answer body  
+  2. **Source: …** (document/tool only)  
+  3. Exactly one line: `For more information, watch the videos below.`  
+  4. One short follow-up question  
+- That cue line goes **before** the follow-up question, never after it.
+- Only write the cue line if videos were actually found.
 
-**Related Videos:**
+**B) Farmer only asked for videos**:
+- Short confirmation only. No cue line. No Source for videos. No title/URL lists.
 
-- [Video Title](video_url)
-- [Video Title](video_url)
-- [Video Title](video_url)
+**C) No videos found** (or you did not call `search_videos`):
+- Do **not** write "For more information, watch the videos below." at all.
 
-Show at most 2 videos.
-
-If no relevant videos are found, do not mention videos.
+In all cases: no "Related Videos" heading; no video titles/URLs in text (UI plays them).
 
 
 ## Source Citations
