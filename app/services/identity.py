@@ -24,7 +24,11 @@ _GUEST_SENTINELS = frozenset(
     }
 )
 
-_CLAIM_ID_KEYS = ("user_id", "sub", "farmer_id", "farmerid", "uid", "id", "unique_id")
+# Opaque-id fallback order when no phone claim exists. Stable farmer registry
+# identifiers come first so every token variant for the same farmer resolves to the
+# same memory_user_id; `sub` is last because many issuers make it per-session, which
+# would mint a fresh memory identity on every login.
+_CLAIM_ID_KEYS = ("unique_id", "farmer_id", "farmerid", "user_id", "uid", "id", "sub")
 
 
 def normalize_phone(phone: str) -> Optional[str]:
@@ -132,8 +136,10 @@ def resolve_memory_user_id(
     """
     Single stable mem0 user key per farmer.
 
-    Priority: JWT phone hash → request phone hash → JWT opaque ids → request opaque id
-    (authenticated or dev only). Query `user_id=anonymous` never blocks a JWT phone.
+    Priority: JWT phone hash (mobile is always highest priority) → request phone hash
+    → JWT stable farmer ids in _CLAIM_ID_KEYS order (unique_id / farmer_id first,
+    sub last) → request opaque id (authenticated or dev only).
+    Query `user_id=anonymous` never blocks a JWT phone.
     """
     from app.config import settings
 

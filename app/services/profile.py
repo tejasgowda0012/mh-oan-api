@@ -151,15 +151,17 @@ def merge_profile(existing: FarmerProfile, partial: dict) -> FarmerProfile:
     by_name = {c["name"].strip().lower(): c for c in data.get("crops", []) if c.get("name")}
     for raw in incoming_crops:
         crop = raw if isinstance(raw, dict) else {"name": str(raw)}
-        name = (crop.get("name") or "").strip().lower()
-        if not name:
-            continue
-        if name in by_name:
-            for k, v in crop.items():
-                if v not in (None, "", []):
-                    by_name[name][k] = v
-        else:
-            by_name[name] = crop
+        # Models sometimes pass "soyabean, maize" as one name — split into separate crops.
+        names = [n.strip() for n in str(crop.get("name") or "").split(",") if n.strip()]
+        for name in names:
+            keyed = name.lower()
+            entry = {**crop, "name": name}
+            if keyed in by_name:
+                for k, v in entry.items():
+                    if v not in (None, "", []):
+                        by_name[keyed][k] = v
+            else:
+                by_name[keyed] = entry
     data["crops"] = list(by_name.values())
     incoming_threads = partial.get("open_threads") or []
     open_topics = {t["topic"].strip().lower() for t in data.get("open_threads", []) if t.get("topic")}
@@ -225,6 +227,19 @@ class ProfileStore:
     def __init__(self) -> None:
         self._client = None
         self._last_init_failure: Optional[float] = None
+        # apply_update / apply_removal are read-modify-write; concurrent tool calls
+        # from one agent turn must serialize per farmer or the last upsert clobbers
+        # the other's field.
+        self._update_locks: dict[str, asyncio.Lock] = {}
+        self._update_locks_guard = asyncio.Lock()
+
+    async def _user_lock(self, user_id: str) -> asyncio.Lock:
+        async with self._update_locks_guard:
+            lock = self._update_locks.get(user_id)
+            if lock is None:
+                lock = asyncio.Lock()
+                self._update_locks[user_id] = lock
+            return lock
 
     def _qdrant_host_port(self) -> tuple[str, int]:
         return (
@@ -306,19 +321,23 @@ class ProfileStore:
             logger.warning("profile.save failed for %s", profile.user_id, exc_info=True)
 
     async def apply_update(self, user_id: str, partial: dict) -> FarmerProfile:
-        existing = await self.get(user_id) or FarmerProfile(user_id=user_id)
-        merged = merge_profile(existing, partial)
-        await self.save(merged)
-        return merged
+        lock = await self._user_lock(user_id)
+        async with lock:
+            existing = await self.get(user_id) or FarmerProfile(user_id=user_id)
+            merged = merge_profile(existing, partial)
+            await self.save(merged)
+            return merged
 
     async def apply_removal(self, user_id: str, field: str, value: str) -> bool:
-        existing = await self.get(user_id)
-        if not existing:
-            return False
-        updated, changed = remove_profile_value(existing, field, value)
-        if changed:
-            await self.save(updated)
-        return changed
+        lock = await self._user_lock(user_id)
+        async with lock:
+            existing = await self.get(user_id)
+            if not existing:
+                return False
+            updated, changed = remove_profile_value(existing, field, value)
+            if changed:
+                await self.save(updated)
+            return changed
 
     async def get_snapshot(self, user_id: str) -> Optional[str]:
         profile = await self.get(user_id)

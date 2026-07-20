@@ -46,9 +46,15 @@ never make that change independently.
 All channels must resolve exactly the same `memory_user_id` before accessing either
 tier:
 
-1. JWT phone number, normalized to `+91XXXXXXXXXX`, then SHA-256 hashed.
+1. JWT phone number, normalized to `+91XXXXXXXXXX`, then SHA-256 hashed. Mobile is
+   always the highest-priority identity source.
 2. Request phone number, normalized and hashed the same way.
-3. Authenticated stable opaque ID from the JWT.
+3. JWT stable farmer identifiers, in this fixed preference order: `unique_id`
+   (registration number), `farmer_id`/`farmerid`, then generic ids (`user_id`,
+   `uid`, `id`), with `sub` last. The order is contractual: a first-present-claim
+   scan across arbitrary keys resolves the same farmer to different ids when token
+   variants carry different claim subsets, and `sub` is commonly per-session, which
+   would mint a fresh memory identity on every login.
 4. Request opaque ID only in an allowed authenticated/development context.
 
 Guests have no persistent memory. Raw phone numbers must never be stored in Qdrant,
@@ -112,8 +118,10 @@ from `memory_user_id`. Its payload follows this shared shape:
 ```
 
 Scalar fields are replaced by newer explicit farmer statements. List values are
-deduplicated case-insensitively, and crops are merged by normalized crop name. A
-channel must not introduce a differently named field for the same concept.
+deduplicated case-insensitively, and crops are merged by normalized crop name;
+comma-joined crop names (e.g. `"soyabean, maize"`) are split into separate crop
+entries on write. A channel must not introduce a differently named field for the
+same concept.
 
 ## Agent operation contract
 
