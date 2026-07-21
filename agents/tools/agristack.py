@@ -402,9 +402,10 @@ async def fetch_agristack_data(ctx: RunContext[FarmerContext]) -> str:
 
     Returns profile fields (gender, caste, village, plot area), masked PII, and GPS.
     """
-    if ctx.deps.farmer_id:
-        farmer_id = ctx.deps.farmer_id
-    else:
+    from agents.tools.cross_network import _resolve_farmer_id_from_context
+
+    farmer_id = await _resolve_farmer_id_from_context(ctx)
+    if not farmer_id:
         return "Farmer ID is not available in the context. Please register with your farmer ID."
 
     try:

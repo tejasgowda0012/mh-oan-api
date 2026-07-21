@@ -1,5 +1,8 @@
 import unittest
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
+
+import httpx
 
 from agents.tools import TOOLS, _require_farmer_identity
 
@@ -46,6 +49,34 @@ class ToolRegistrationGatingTests(unittest.TestCase):
         self.assertEqual(open_tools, set(found), "expected tools missing from TOOLS")
         for name, tool in found.items():
             self.assertIsNone(tool.prepare, name)
+
+
+class AgristackIdentityFallbackTests(unittest.IsolatedAsyncioTestCase):
+    async def test_unique_id_farmer_reaches_network_call(self):
+        """unique_id-only token: resolver supplies farmer_id, tool proceeds to fetch."""
+        from agents.tools import agristack as agristack_module
+
+        ctx = SimpleNamespace(deps=SimpleNamespace(farmer_id=None, unique_id="2342"))
+        with patch(
+            "agents.tools.cross_network._resolve_farmer_id_from_context",
+            new=AsyncMock(return_value="F-123"),
+        ) as resolver, patch("httpx.AsyncClient", side_effect=httpx.RequestError("boom")):
+            result = await agristack_module.fetch_agristack_data(ctx)
+
+        resolver.assert_awaited_once_with(ctx)
+        self.assertIn("request failed", result)
+
+    async def test_guest_gets_not_available(self):
+        from agents.tools import agristack as agristack_module
+
+        ctx = SimpleNamespace(deps=SimpleNamespace(farmer_id=None, unique_id=None))
+        with patch(
+            "agents.tools.cross_network._resolve_farmer_id_from_context",
+            new=AsyncMock(return_value=None),
+        ):
+            result = await agristack_module.fetch_agristack_data(ctx)
+
+        self.assertIn("not available", result)
 
 
 if __name__ == "__main__":
