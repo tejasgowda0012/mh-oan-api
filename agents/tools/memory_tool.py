@@ -53,18 +53,20 @@ async def recall_farmer_memory(ctx: RunContext[FarmerContext], query: str) -> st
 
 @observe(name="tool:save_farmer_memory", as_type="tool")
 async def save_farmer_memory(ctx: RunContext[FarmerContext], memory: str) -> str:
-    """Save an episodic note about the farmer for future chats (mem0).
+    """Save durable farmer context for future chats (mem0 infer pipeline).
 
-    First call `recall_farmer_memory` with the candidate topic. Call this only when
-    recall shows no equivalent memory and the farmer explicitly provided useful,
-    durable context that does not fit the structured profile, such as an ongoing
-    farm problem, open follow-up, durable preference, or past advice topic. If an
-    existing memory is equivalent, do nothing. If one memory is clearly superseded,
-    call `edit_farmer_memory` instead. Do not use this for structured profile facts,
-    inferred facts, secrets, OTPs, identifiers, live data, or general knowledge.
+    Pass the farmer's own words (verbatim or lightly trimmed). The memory system
+    extracts the durable facts and reconciles them automatically — it skips
+    duplicates, updates superseded memories, and does nothing when the fact is
+    already stored, so there is no need to recall before saving. Use this for an
+    ongoing farm problem, open follow-up, durable preference, or past advice
+    topic — and also when the farmer explicitly corrects something saved earlier
+    (the system supersedes the old version). Do NOT use for structured profile
+    facts (use `update_farmer_profile`), inferred facts, secrets, OTPs,
+    identifiers, live data, or general knowledge.
 
     Args:
-        memory: Clear factual sentence(s) to store, in English or Marathi.
+        memory: The farmer's relevant statement, in English or Marathi.
     """
     user_id = ctx.deps.memory_user_id
     if not user_id:
@@ -72,7 +74,7 @@ async def save_farmer_memory(ctx: RunContext[FarmerContext], memory: str) -> str
 
     from app.services.memory import memory_service
 
-    return await memory_service.add_fact(user_id, memory, source="save_farmer_memory", infer=False)
+    return await memory_service.add_fact(user_id, memory, source="save_farmer_memory", infer=True)
 
 
 @observe(name="tool:edit_farmer_memory", as_type="tool")

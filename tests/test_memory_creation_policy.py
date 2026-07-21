@@ -45,7 +45,7 @@ class FakeProfileLookup:
 
 
 class MemoryCreationToolTests(unittest.IsolatedAsyncioTestCase):
-    async def test_save_memory_uses_current_farmer_identity_without_inference(self):
+    async def test_save_memory_uses_current_farmer_identity_with_inference(self):
         service = FakeMemoryService()
         ctx = SimpleNamespace(deps=SimpleNamespace(memory_user_id="farmer-a"))
 
@@ -59,7 +59,7 @@ class MemoryCreationToolTests(unittest.IsolatedAsyncioTestCase):
                     "farmer-a",
                     "Follow up on cotton wilt next week",
                     "save_farmer_memory",
-                    False,
+                    True,
                 )
             ],
             service.calls,
@@ -137,21 +137,24 @@ class ProfilePreloadTests(unittest.IsolatedAsyncioTestCase):
 
 
 class MemoryCreationPolicyTests(unittest.TestCase):
-    def test_creation_tools_require_reconciliation(self):
-        self.assertIn("First call `recall_farmer_memory`", inspect.getdoc(save_farmer_memory))
+    def test_save_tool_defers_reconciliation_to_mem0_infer(self):
+        doc = inspect.getdoc(save_farmer_memory)
+        self.assertIn("reconciles them automatically", doc)
+        self.assertIn("no need to recall before saving", doc)
+        self.assertIn("update_farmer_profile", doc)
         self.assertIn("Do not call it for an unchanged", inspect.getdoc(update_farmer_profile))
         self.assertIn("clearly says", inspect.getdoc(remove_farmer_profile_value))
 
-    def test_every_live_prompt_requires_reconciliation(self):
+    def test_every_live_prompt_states_auto_reconcile_policy(self):
         prompts = Path("assets/prompts")
         for language in ("en", "mr", "hi", "bhb"):
             with self.subTest(language=language):
                 text = (prompts / f"agrinet_system_{language}.md").read_text()
-                self.assertIn("Reconcile memory; do not save every message", text)
+                self.assertIn("Do not save every message", text)
                 self.assertIn("If it is already present unchanged, do nothing", text)
-                self.assertIn("first call `recall_farmer_memory`", text)
-                self.assertIn("If an equivalent memory exists, do nothing", text)
-                self.assertIn("call `edit_farmer_memory`", text)
+                self.assertIn("call `save_farmer_memory` with the farmer's own words", text)
+                self.assertIn("reconciles them automatically", text)
+                self.assertIn("call `delete_farmer_memory` with the exact returned ID", text)
                 self.assertIn("call `remove_farmer_profile_value`", text)
                 self.assertIn("A message containing only personal farm information", text)
                 self.assertIn("Never save OTPs", text)

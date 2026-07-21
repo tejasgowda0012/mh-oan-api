@@ -221,6 +221,24 @@ class MemoryService:
             logger.warning("get_all failed for user %s", user_id, exc_info=True)
             return []
 
+    @staticmethod
+    def _summarize_add_result(result, infer: bool) -> str:
+        """Turn mem0's add() response into a tool-facing string (no IDs)."""
+        if not infer:
+            return "Saved to farmer memory."
+        results = result.get("results") if isinstance(result, dict) else result
+        if not isinstance(results, list) or not results:
+            return "Saved to farmer memory."
+        events = {
+            str(r.get("event", "")).upper() for r in results if isinstance(r, dict)
+        }
+        events.discard("")
+        if events & {"ADD", "UPDATE", "DELETE"}:
+            return "Saved to farmer memory."
+        if events <= {"NOOP", "NONE"} and events:
+            return "Already saved — this memory is up to date."
+        return "Saved to farmer memory."
+
     async def add_fact(
         self,
         user_id: str,
@@ -229,7 +247,8 @@ class MemoryService:
         source: str = "chat_tool",
         infer: bool = True,
     ) -> str:
-        """Store a farmer memory. With infer=True, mem0 extracts atomic facts from the text."""
+        """Store a farmer memory. With infer=True, mem0 extracts atomic facts from the text
+        and reconciles them against existing memories (ADD / UPDATE / DELETE / NOOP)."""
         client = self._get_client()
         if not client or not user_id:
             return "Memory storage is not available for this session."
@@ -253,9 +272,9 @@ class MemoryService:
                 )
 
         try:
-            await asyncio.get_event_loop().run_in_executor(None, _add)
+            result = await asyncio.get_event_loop().run_in_executor(None, _add)
             logger.info("add_fact user=%s len=%d infer=%s", user_id, len(text), infer)
-            return "Saved to farmer memory."
+            return self._summarize_add_result(result, infer)
         except Exception:
             logger.error("add_fact failed for user %s", user_id, exc_info=True)
             return "Could not save memory right now. Please try again later."

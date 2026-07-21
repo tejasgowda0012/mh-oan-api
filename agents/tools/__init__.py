@@ -28,6 +28,18 @@ from agents.tools.memory_tool import (
 )
 from agents.tools.profile_tool import remove_farmer_profile_value, update_farmer_profile
 
+
+def _require_farmer_identity(ctx, tool_def):
+    """Offer login-gated tools only when the token carries a farmer identity.
+
+    Guests never see these tools at all (per-run Tool.prepare), instead of
+    calling them and receiving a not-logged-in message.
+    """
+    deps = ctx.deps
+    if getattr(deps, "farmer_id", None) or getattr(deps, "unique_id", None):
+        return tool_def
+    return None
+
 TOOLS = [
     # Search Terms
     Tool(
@@ -146,6 +158,7 @@ TOOLS = [
         takes_ctx=True,
         docstring_format='auto', 
         require_parameter_descriptions=False, # No params are needed for this tool
+        prepare=_require_farmer_identity,
     ),
     # Scheme Codes
     Tool(
@@ -169,6 +182,7 @@ TOOLS = [
         takes_ctx=True,
         docstring_format='auto', 
         require_parameter_descriptions=False,
+        prepare=_require_farmer_identity,
     ),
 
     # POCRA DBT
@@ -177,6 +191,7 @@ TOOLS = [
         takes_ctx=True,
         docstring_format='auto',
         require_parameter_descriptions=False,
+        prepare=_require_farmer_identity,
     ),
 
     # Agricultural Staff Contact

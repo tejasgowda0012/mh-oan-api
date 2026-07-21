@@ -46,9 +46,15 @@ never make that change independently.
 All channels must resolve exactly the same `memory_user_id` before accessing either
 tier:
 
-1. JWT phone number, normalized to `+91XXXXXXXXXX`, then SHA-256 hashed.
+1. JWT phone number, normalized to `+91XXXXXXXXXX`, then SHA-256 hashed. Mobile is
+   always the highest-priority identity source.
 2. Request phone number, normalized and hashed the same way.
-3. Authenticated stable opaque ID from the JWT.
+3. JWT stable farmer identifiers, in this fixed preference order: `unique_id`
+   (registration number), `farmer_id`/`farmerid`, then generic ids (`user_id`,
+   `uid`, `id`), with `sub` last. The order is contractual: a first-present-claim
+   scan across arbitrary keys resolves the same farmer to different ids when token
+   variants carry different claim subsets, and `sub` is commonly per-session, which
+   would mint a fresh memory identity on every login.
 4. Request opaque ID only in an allowed authenticated/development context.
 
 Guests have no persistent memory. Raw phone numbers must never be stored in Qdrant,
@@ -112,8 +118,10 @@ from `memory_user_id`. Its payload follows this shared shape:
 ```
 
 Scalar fields are replaced by newer explicit farmer statements. List values are
-deduplicated case-insensitively, and crops are merged by normalized crop name. A
-channel must not introduce a differently named field for the same concept.
+deduplicated case-insensitively, and crops are merged by normalized crop name;
+comma-joined crop names (e.g. `"soyabean, maize"`) are split into separate crop
+entries on write. A channel must not introduce a differently named field for the
+same concept.
 
 ## Agent operation contract
 
@@ -122,8 +130,8 @@ All channels must expose equivalent operations, even if their local tool names d
 | Operation | Chat tool | Required behavior |
 | --- | --- | --- |
 | Recall | `recall_farmer_memory` | Search only the current `memory_user_id`; return matching text with opaque IDs internally. |
-| Create | `save_farmer_memory` | Save an episodic note for the current farmer only. |
-| Edit | `edit_farmer_memory` | Recall first, use the returned ID, verify ownership, then replace that one record. |
+| Create | `save_farmer_memory` | Pass the farmer's own words for the current farmer only. mem0's infer pipeline extracts durable facts and reconciles them automatically (add / update / delete / no-op), so no recall-first is required for saving. |
+| Edit | `edit_farmer_memory` | Recall first, use the returned ID, verify ownership, then replace that one record. Reserved for precise targeted replacement; ordinary corrections go through `save_farmer_memory` and are superseded automatically. |
 | Delete | `delete_farmer_memory` | Recall first, use the returned ID, verify ownership, then delete that one record. |
 | Profile update | `update_farmer_profile` | Save durable structured facts instead of episodic notes. |
 | Profile removal | `remove_farmer_profile_value` | Remove only an explicitly retracted matching structured value. |
@@ -153,10 +161,12 @@ An absent record and a record owned by another farmer must produce the same
 
 - Load the structured profile once at the beginning of a new conversation. Do not
   bulk-inject episodic memories into the prompt.
-- Retrieve episodic memories on demand with recall when the current message contains
-  a memory candidate, references past context, or requests a correction/deletion.
-- Reconcile before writing: skip an equivalent memory, edit one clearly superseded
-  memory, and create only when no equivalent exists.
+- Retrieve episodic memories on demand with recall when the current message
+  references past context or requests a deletion.
+- Write episodic memories through mem0's infer pipeline: pass the farmer's own
+  words to save, and it extracts durable facts, skips duplicates, and supersedes
+  outdated memories automatically. A channel must not store model-composed notes
+  verbatim with `infer=False`.
 - Save only farmer-specific, durable context—not live weather, mandi prices, scheme
   details, or retrieved documents.
 - Use the structured profile for location, crops, acreage, irrigation, and similar
