@@ -356,8 +356,8 @@ class AgristackResponse(BaseModel):
 _PROFILE_TAG_MAP = {"village_name": "village", "district_name": "district"}
 
 
-def _extract_profile_gaps(farmer_response: AgristackResponse, existing) -> dict:
-    """Registry location fields the profile does not already have (gap-fill only)."""
+def _extract_registry_fields(farmer_response: AgristackResponse) -> dict:
+    """Registry fields eligible for profile gap-fill (location only, no PII)."""
     found: Dict[str, str] = {}
     for rsp in farmer_response.responses:
         for provider in rsp.message.catalog.providers:
@@ -368,28 +368,24 @@ def _extract_profile_gaps(farmer_response: AgristackResponse, existing) -> dict:
                         cleaned = tag.value.strip()
                         if cleaned:
                             found[field] = cleaned
-    return {
-        field: value
-        for field, value in found.items()
-        if not getattr(existing, field, None)
-    }
+    return found
 
 
 async def _harvest_profile_gaps(ctx: RunContext[FarmerContext], farmer_response: AgristackResponse) -> None:
-    """Fill empty profile fields from the Agristack record — never overrides
-    farmer-stated values. Best-effort: must never break the tool's main return."""
+    """Fill empty profile fields from the Agristack record. The store decides what
+    is empty under the per-user lock, so a concurrent farmer-stated update always
+    wins. Best-effort: must never break the tool's main return."""
     user_id = getattr(ctx.deps, "memory_user_id", None)
     if not user_id:
         return
     try:
-        from app.services.profile import FarmerProfile, profile_store
+        from app.services.profile import profile_store
 
-        existing = await profile_store.get(user_id) or FarmerProfile(user_id=user_id)
-        gaps = _extract_profile_gaps(farmer_response, existing)
-        if not gaps:
+        fields = _extract_registry_fields(farmer_response)
+        if not fields:
             return
-        await profile_store.apply_update(user_id, gaps)
-        logger.info("agristack profile harvest user=%s fields=%s", user_id, sorted(gaps))
+        await profile_store.apply_gap_fill(user_id, fields)
+        logger.info("agristack profile harvest user=%s fields=%s", user_id, sorted(fields))
     except Exception:
         logger.warning("agristack profile harvest failed", exc_info=True)
 

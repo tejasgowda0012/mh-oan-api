@@ -121,6 +121,32 @@ class CropMergeTests(unittest.TestCase):
         self.assertEqual(["cotton"], [c.name for c in merged.crops])
 
 
+class GapFillTests(unittest.IsolatedAsyncioTestCase):
+    async def test_gap_fill_fills_only_empty_fields(self):
+        backend = FakeProfileBackend()
+        backend.payload = FarmerProfile(user_id="u", village="Bhadgaon").model_dump()
+        store = _wired_store(backend)
+        await store.apply_gap_fill("u", {"village": "Registryville", "district": "Tumkur"})
+        final = FarmerProfile(**backend.payload)
+        self.assertEqual("Bhadgaon", final.village)
+        self.assertEqual("Tumkur", final.district)
+
+    async def test_gap_fill_writes_nothing_when_no_empty_fields(self):
+        backend = FakeProfileBackend()
+        backend.payload = FarmerProfile(
+            user_id="u", village="Bhadgaon", district="Jalgaon"
+        ).model_dump()
+        store = _wired_store(backend)
+        await store.apply_gap_fill("u", {"village": "X", "district": "Y"})
+        self.assertEqual("Bhadgaon", FarmerProfile(**backend.payload).village)
+
+    async def test_gap_fill_creates_profile_when_absent(self):
+        backend = FakeProfileBackend()
+        store = _wired_store(backend)
+        await store.apply_gap_fill("u", {"district": "Tumkur"})
+        self.assertEqual("Tumkur", FarmerProfile(**backend.payload).district)
+
+
 class InferResultSummaryTests(unittest.TestCase):
     def test_add_and_update_events_report_saved(self):
         for payload in [

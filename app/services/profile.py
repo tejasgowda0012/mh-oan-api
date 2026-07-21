@@ -339,6 +339,26 @@ class ProfileStore:
                 await self.save(updated)
             return changed
 
+    async def apply_gap_fill(self, user_id: str, partial: dict) -> FarmerProfile:
+        """Fill only scalar fields that are empty at write time (registry gap-fill).
+
+        The emptiness check runs under the per-user lock so a concurrent
+        farmer-stated update always wins over registry data.
+        """
+        lock = await self._user_lock(user_id)
+        async with lock:
+            existing = await self.get(user_id) or FarmerProfile(user_id=user_id)
+            gaps = {
+                field: value
+                for field, value in partial.items()
+                if value not in (None, "", []) and not getattr(existing, field, None)
+            }
+            if not gaps:
+                return existing
+            merged = merge_profile(existing, gaps)
+            await self.save(merged)
+            return merged
+
     async def get_snapshot(self, user_id: str) -> Optional[str]:
         profile = await self.get(user_id)
         if not profile:

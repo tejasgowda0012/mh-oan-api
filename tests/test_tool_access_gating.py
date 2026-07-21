@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, patch
 import httpx
 
 from agents.tools import TOOLS, _require_farmer_identity
-from agents.tools.agristack import AgristackResponse, _extract_profile_gaps
-from app.services.profile import FarmerProfile
+from agents.tools.agristack import AgristackResponse, _extract_registry_fields
+from app.services.profile import FarmerProfile, profile_store
 
 
 def _ctx(*, farmer_id=None, unique_id=None):
@@ -127,28 +127,24 @@ _LOCATION_TAGS = [
 ]
 
 
-class AgristackProfileHarvestTests(unittest.TestCase):
-    def test_empty_profile_gets_village_and_district(self):
+class AgristackRegistryFieldTests(unittest.TestCase):
+    def test_extracts_village_and_district(self):
         response = AgristackResponse.model_validate(_agristack_payload(_LOCATION_TAGS))
-        gaps = _extract_profile_gaps(response, FarmerProfile(user_id="u"))
-        self.assertEqual({"village": "Huliyar", "district": "Tumkur"}, gaps)
+        self.assertEqual(
+            {"village": "Huliyar", "district": "Tumkur"},
+            _extract_registry_fields(response),
+        )
 
-    def test_farmer_stated_values_never_overwritten(self):
+    def test_pii_plot_area_and_taluka_never_extracted(self):
         response = AgristackResponse.model_validate(_agristack_payload(_LOCATION_TAGS))
-        existing = FarmerProfile(user_id="u", village="Bhadgaon", district="Jalgaon")
-        self.assertEqual({}, _extract_profile_gaps(response, existing))
+        fields = _extract_registry_fields(response)
+        self.assertNotIn("mobile", fields)
+        self.assertNotIn("land_area_acres", fields)
+        self.assertNotIn("taluka", fields)
 
-    def test_only_empty_fields_filled(self):
-        response = AgristackResponse.model_validate(_agristack_payload(_LOCATION_TAGS))
-        existing = FarmerProfile(user_id="u", village="Bhadgaon")
-        self.assertEqual({"district": "Tumkur"}, _extract_profile_gaps(response, existing))
-
-    def test_pii_plot_area_and_taluka_never_harvested(self):
-        response = AgristackResponse.model_validate(_agristack_payload(_LOCATION_TAGS))
-        gaps = _extract_profile_gaps(response, FarmerProfile(user_id="u"))
-        self.assertNotIn("mobile", gaps)
-        self.assertNotIn("land_area_acres", gaps)
-        self.assertNotIn("taluka", gaps)
+    def test_empty_response_yields_nothing(self):
+        response = AgristackResponse.model_validate(_agristack_payload([]))
+        self.assertEqual({}, _extract_registry_fields(response))
 
 
 class _FakeResponse:
@@ -175,35 +171,54 @@ class _FakeAsyncClient:
         return _FakeResponse(self._payload)
 
 
+class _FakeProfileBackend:
+    """In-memory get/save wired onto the real profile_store."""
+
+    def __init__(self):
+        self.payload = None
+
+    async def get(self, user_id):
+        if self.payload is None:
+            return None
+        return FarmerProfile(**self.payload)
+
+    async def save(self, profile):
+        self.payload = profile.model_dump()
+
+
 class AgristackToolHarvestWiringTests(unittest.IsolatedAsyncioTestCase):
-    async def _run_tool(self, existing_profile):
+    """Tool → resolver → http → harvest → real store (fake backend)."""
+
+    async def _run_tool(self, backend):
         from agents.tools import agristack as agristack_module
-        from app.services.profile import profile_store
 
         ctx = SimpleNamespace(
             deps=SimpleNamespace(farmer_id="F-1", unique_id=None, memory_user_id="u-1")
         )
         payload = _agristack_payload(_LOCATION_TAGS)
-        with patch.object(profile_store, "get", new=AsyncMock(return_value=existing_profile)), patch.object(
-            profile_store, "apply_update", new=AsyncMock()
-        ) as apply_update, patch(
-            "httpx.AsyncClient", lambda *a, **k: _FakeAsyncClient(payload)
-        ):
-            result = await agristack_module.fetch_agristack_data(ctx)
-        return result, apply_update
+        with patch.object(profile_store, "get", backend.get), patch.object(
+            profile_store, "save", backend.save
+        ), patch("httpx.AsyncClient", lambda *a, **k: _FakeAsyncClient(payload)):
+            return await agristack_module.fetch_agristack_data(ctx)
 
     async def test_fetch_harvests_location_into_empty_profile(self):
-        result, apply_update = await self._run_tool(None)
-        apply_update.assert_awaited_once_with(
-            "u-1", {"village": "Huliyar", "district": "Tumkur"}
-        )
+        backend = _FakeProfileBackend()
+        result = await self._run_tool(backend)
         self.assertIn("Farmer Information", result)
+        saved = FarmerProfile(**backend.payload)
+        self.assertEqual("Huliyar", saved.village)
+        self.assertEqual("Tumkur", saved.district)
 
-    async def test_fetch_skips_harvest_when_profile_complete(self):
-        existing = FarmerProfile(user_id="u-1", village="Bhadgaon", district="Jalgaon")
-        result, apply_update = await self._run_tool(existing)
-        apply_update.assert_not_awaited()
+    async def test_fetch_preserves_farmer_stated_location(self):
+        backend = _FakeProfileBackend()
+        backend.payload = FarmerProfile(
+            user_id="u-1", village="Bhadgaon", district="Jalgaon"
+        ).model_dump()
+        result = await self._run_tool(backend)
         self.assertIn("Farmer Information", result)
+        saved = FarmerProfile(**backend.payload)
+        self.assertEqual("Bhadgaon", saved.village)
+        self.assertEqual("Jalgaon", saved.district)
 
 
 class AgristackPrecedencePromptTests(unittest.TestCase):
