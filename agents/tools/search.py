@@ -28,7 +28,8 @@ DocumentType = Literal['video', 'document']
 AGUI_VIDEO_LIMIT = 2
 
 # Filler words stripped when scoring video hits against the query.
-# Not a crop dictionary — only drops words that appear in every Digital Farm intro.
+# Not a crop dictionary — drops words that appear across almost every FSS workshop
+# (seed treatment Q&A, digital farm intros, etc.).
 #
 # TEMP (video-index quality): stopwords + rank_and_filter_video_hits re-rank can mostly
 # go away after ingesting more (and better) videos — when the video index looks more
@@ -36,6 +37,9 @@ AGUI_VIDEO_LIMIT = 2
 # workshop templates). Until then, Marqo alone often ranks toor/cotton above rice for
 # "digital rice farming…" because of shared boilerplate. Keep URL dedupe + empty/no-play
 # handling even after that cleanup.
+#
+# Example failure without stopping "treatment": query "treatment for Mastitis in buffalo"
+# matched rice/maize/cotton clips that only discuss *seed* treatment.
 _QUERY_STOPWORDS = frozenset({
     "a", "an", "the", "and", "or", "of", "for", "to", "in", "on", "with", "by",
     "how", "what", "when", "where", "why", "is", "are", "about", "tell", "me",
@@ -45,6 +49,10 @@ _QUERY_STOPWORDS = frozenset({
     "practices", "modern", "improved", "smart", "using", "use", "best", "good",
     "high", "low", "better", "management", "cultivation", "production",
     "information", "requirement", "requirements",
+    # Common across all FSS Q&A — must not alone match an unrelated disease/livestock query
+    "treatment", "treat", "seed", "seeds", "chemical", "organic", "dose", "spray",
+    "insecticide", "fungicide", "fertilizer", "fertilizers", "pesticide", "control",
+    "disease", "pest", "pests", "apply", "application", "sowing", "transplant",
 })
 
 
@@ -139,29 +147,36 @@ def _query_content_tokens(query: str) -> list[str]:
     return out
 
 
+def _hit_blob(hit: SearchHit) -> tuple[str, str]:
+    name = (hit.name or "").lower().replace("_", " ").replace("-", " ")
+    text = (hit.text or "").lower().replace("_", " ").replace("-", " ")
+    return name, text
+
+
 def _lexical_match_score(hit: SearchHit, tokens: list[str]) -> tuple[int, int, int]:
     """
     Score how well a hit matches query tokens.
 
-    Returns (title_hits, text_hits, total) for sorting.
+    Returns (title_hits, text_hits, matched_token_count) for sorting.
     Title matches are what fix "rice" ranking above "toor digital farm".
     """
     if not tokens:
         return (0, 0, 0)
-    name = (hit.name or "").lower().replace("_", " ").replace("-", " ")
-    # Score title/name only for ranking first; text used for keep/drop
-    text = (hit.text or "").lower().replace("_", " ").replace("-", " ")
+    name, text = _hit_blob(hit)
+    blob = name + " " + text
     title_hits = sum(1 for t in tokens if t in name)
     text_hits = sum(1 for t in tokens if t in text)
-    return (title_hits, text_hits, title_hits + text_hits)
+    matched = sum(1 for t in tokens if t in blob)
+    return (title_hits, text_hits, matched)
 
 
 def rank_and_filter_video_hits(hits: list[SearchHit], query: str) -> list[SearchHit]:
     """
     Re-rank Marqo video hits so retrieval behaves sensibly on a small, similar corpus.
 
-    1. Require at least one query content token in name or text (else drop).
-       → no random cotton/toor when query is "tuberose".
+    1. Require EVERY content token from the query to appear in name or text (AND).
+       → "treatment for Mastitis in buffalo" needs mastitis + buffalo, not just
+         "treatment" (which matches every seed-treatment workshop).
     2. Sort by title token matches, then text matches, then Marqo score.
        → "digital rice farming…" ranks Rice* above Toor/Cotton.
     3. Dedupe by YouTube URL (keep best-ranked chunk per video).
@@ -179,12 +194,16 @@ def rank_and_filter_video_hits(hits: list[SearchHit], query: str) -> list[Search
 
     scored: list[tuple[tuple[int, int, float], SearchHit]] = []
     for hit in hits:
-        title_hits, text_hits, total = _lexical_match_score(hit, tokens)
-        if total == 0:
+        title_hits, text_hits, matched = _lexical_match_score(hit, tokens)
+        # AND: all content tokens must appear (e.g. mastitis AND buffalo).
+        if matched < len(tokens):
             logger.info(
-                "search_videos drop zero-lexical name=%s score=%.4f tokens=%s",
+                "search_videos drop incomplete-lexical name=%s score=%.4f "
+                "matched=%s/%s tokens=%s",
                 hit.name,
                 hit.score,
+                matched,
+                len(tokens),
                 tokens,
             )
             continue
