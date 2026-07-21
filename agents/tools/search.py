@@ -1,13 +1,6 @@
 """
 Marqo client implementation for vector search.
-
-Flow for crop/advisory (agent + prompts):
-  search_terms (glossary) → English topic
-  search_documents (hybrid, type:document)
-  search_videos   (hybrid, type:video) then light re-rank / drop zero lexical match
-
-No hand-maintained crop synonym tables — English query tokens come from the agent
-(and search_terms / glossary), same idea as documents.
+This module is used to search for documents and videos using the Marqo vector search engine.
 """
 import os
 import re
