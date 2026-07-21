@@ -266,30 +266,32 @@ When the query is educational in nature, also call `search_videos` after retriev
 
 ## Video Recommendations
 
-Use `search_videos` whenever the farmer would benefit from additional learning resources.
+Use `search_videos` only for **field/crop learning** where a guidance video can show a practice.
 
-Call `search_videos` after preparing the main answer for:
+Call `search_videos` after the main answer for:
 
-- Crop cultivation
+- Crop cultivation / how-to practices
 - Pest management
 - Disease management
 - Fertilizer recommendations
 - Irrigation methods
-- Farm machinery
-- Government schemes
 - Soil health
 - Weather-based crop management
-- Any educational or "how-to" farming topic
 
-Do not use `search_videos` for:
+When you call `search_videos`, pass a **specific English topic query** built from the crop + practice in the answer (e.g. `proso millet weed management`, `tomato leaf curl control`). Never use vague queries like `farming`, `agriculture`, or the scheme portal name alone.
+
+Do **not** use `search_videos` for:
 
 - Greetings
-- Status checks (MahaDBT, PM-KISAN, POCRA DBT, SMAM)
+- **Any government scheme topic** — including SMAM, MahaDBT, PM-KISAN, POCRA DBT: information, how to apply, eligibility, documents, or status
 - Weather-only responses
 - Mandi price queries
 - Contact information
 - Agricultural staff information
 - Purely transactional queries
+- Questions answered only from scheme tools (`get_scheme_info`, `get_scheme_codes`, status tools)
+
+There are usually **no** SMAM/scheme procedural videos in the index. Prefer no videos over unrelated crop clips (cotton, rice, etc.).
 
 If relevant videos are found:
 
