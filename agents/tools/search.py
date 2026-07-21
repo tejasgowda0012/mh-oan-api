@@ -23,13 +23,8 @@ logger = get_logger(__name__)
 
 DocumentType = Literal['video', 'document']
 
-# Max videos exposed to AG-UI players per tool call (prompt also caps display at 2).
+# Max videos attached to AG-UI for inline playback (agent still sees full top_k).
 AGUI_VIDEO_LIMIT = 2
-# Default retrieval size before relevance filtering (keep small — more noise above this).
-DEFAULT_VIDEO_TOP_K = 5
-# Drop weak tensor matches so unrelated popular videos (e.g. cotton) do not fill SMAM queries.
-# Override with MARQO_VIDEO_MIN_SCORE (0–1 typical for Marqo tensor scores).
-DEFAULT_VIDEO_MIN_SCORE = float(os.getenv("MARQO_VIDEO_MIN_SCORE", "0.55"))
 
 
 class SearchHit(BaseModel):
@@ -80,7 +75,7 @@ class SearchHit(BaseModel):
             title=self.name,
             url=url,
             description=self.processed_text,
-            source=None,  # never pass slug names like Groundnut_Pest_Control
+            source=None,
         )
 
     def __str__(self) -> str:
@@ -88,11 +83,10 @@ class SearchHit(BaseModel):
         lines = [f"**{self.name}**"]
 
         if self.type == 'video':
-            # Human title for agent context only — never present slug as "Source".
             title = humanize_video_title(self.name)
             url = self.video_url
             if url:
-                return f"**{title}**\nPlayback URL (do not show URL or slug names to farmer): {url}\n" + body
+                return f"**[{title}]({url})**\n" + body
             return f"**{title}**\n" + body
 
         if self.citation_source:
@@ -101,75 +95,8 @@ class SearchHit(BaseModel):
         return "\n".join(lines) + "\n" + body
 
 
-def _query_keywords(query: str) -> set[str]:
-    """Content words from the video search query (English)."""
-    stop = {
-        "a", "an", "the", "and", "or", "of", "for", "to", "in", "on", "with",
-        "how", "what", "when", "where", "why", "is", "are", "about", "tell",
-        "me", "any", "video", "videos", "guidance", "related", "please",
-        "scheme", "government", "application", "status", "information",
-    }
-    tokens = re.findall(r"[a-z0-9]+", (query or "").lower())
-    return {t for t in tokens if len(t) >= 3 and t not in stop}
-
-
-def hit_matches_query(hit: SearchHit, query: str) -> bool:
-    """
-    True only when a content keyword from the query appears in title/transcript.
-
-    Policy: prefer returning *no* videos over off-topic ones. Vague queries with
-    no content keywords never match (caller returns empty).
-    """
-    keywords = _query_keywords(query)
-    if not keywords:
-        return False
-    haystack = f"{hit.name} {hit.text}".lower().replace("_", " ").replace("-", " ")
-    return any(kw in haystack for kw in keywords)
-
-
-def filter_relevant_video_hits(
-    hits: list[SearchHit],
-    query: str,
-    min_score: float = DEFAULT_VIDEO_MIN_SCORE,
-) -> list[SearchHit]:
-    """
-    Keep only hits that are both strong enough and on-topic.
-
-    If nothing passes, return [] — never fall back to raw top-K.
-    """
-    keywords = _query_keywords(query)
-    if not keywords:
-        logger.info(
-            "search_videos empty result: query has no content keywords query=%r",
-            query,
-        )
-        return []
-
-    kept: list[SearchHit] = []
-    for hit in hits:
-        if hit.score < min_score:
-            logger.info(
-                "search_videos drop low score name=%s score=%.4f min=%.4f query=%s",
-                hit.name,
-                hit.score,
-                min_score,
-                query,
-            )
-            continue
-        if not hit_matches_query(hit, query):
-            logger.info(
-                "search_videos drop off-topic name=%s score=%.4f query=%s",
-                hit.name,
-                hit.score,
-                query,
-            )
-            continue
-        kept.append(hit)
-    return kept
-
-
 def collect_video_resources(hits: list[SearchHit], limit: int = AGUI_VIDEO_LIMIT) -> list[VideoResource]:
-    """Build de-duplicated structured video resources from *already filtered* hits."""
+    """Build de-duplicated structured video resources from search hits (for AG-UI)."""
     resources: list[VideoResource] = []
     for hit in hits:
         resource = hit.to_video_resource()
@@ -177,31 +104,6 @@ def collect_video_resources(hits: list[SearchHit], limit: int = AGUI_VIDEO_LIMIT
             resources.append(resource)
     return dedupe_videos(resources)[:limit]
 
-
-_NO_RELEVANT_VIDEOS_MSG = (
-    "No relevant videos found for this topic.\n"
-    "Do NOT write 'For more information, watch the videos below.'\n"
-    "Do NOT invent, guess, or recommend any other videos.\n"
-    "Continue with the text answer only (no video section)."
-)
-
-
-def format_videos_for_agent(query: str, hits: list[SearchHit]) -> str:
-    """Agent-facing tool return. Empty hits ⇒ no videos for UI or farmer text."""
-    if not hits:
-        return f"No relevant videos found for `{query}`.\n{_NO_RELEVANT_VIDEOS_MSG}"
-    video_string = "\n\n----\n\n".join(str(document) for document in hits)
-    return (
-        f"> Relevant videos for `{query}`\n\n"
-        f"{video_string}\n\n"
-        "IMPORTANT for the farmer-facing answer:\n"
-        "- These videos already passed relevance checks; still do not list titles/URLs "
-        "(UI plays them inline).\n"
-        "- Never write a Source line for videos.\n"
-        "- Order: answer → **Source:** (document only) → "
-        "'For more information, watch the videos below.' → follow-up question.\n"
-        "- Cue line only when videos were found; never if tool said no relevant videos.\n"
-    )
 
 @observe(name="tool:search_documents", as_type="tool")
 async def search_documents(
@@ -258,29 +160,30 @@ async def search_documents(
         logger.error(f"Error searching documents: {e} for query: {query}")
         raise ModelRetry(f"Error searching documents, please try again")
 
+
 @observe(name="tool:search_videos", as_type="tool")
 async def search_videos(
     ctx: RunContext[FarmerContext],
     query: str,
-    top_k: int = DEFAULT_VIDEO_TOP_K,
+    top_k: int = 10,
 ) -> str:
     """
-    Semantic search for guidance videos closely matching the farmer's topic.
+    Semantic search for videos — same Marqo pattern as search_documents.
 
-    Pass a **specific English topic query** (crop + practice), e.g.
-    "proso millet weed management" or "tomato leaf curl control" —
-    not vague strings like "farming" or scheme portal names alone.
+    Call **after** search_documents in the same turn with the same English topic.
+    filter_string is type:video; retrieval is hybrid (identical params to documents).
+    If hybrid returns no hits, falls back to tensor once (video index quirk).
 
-    Stores only *relevant* hits on FarmerContext.related_videos for AG-UI.
-    Returns "no relevant videos" (and stores nothing) when matches are weak
-    or off-topic so the UI does not show cotton/rice clips for SMAM, etc.
+    Stores up to AGUI_VIDEO_LIMIT playable hits on FarmerContext.related_videos
+    for AG-UI. If Marqo returns no hits, returns a short empty message only
+    (never invents substitute videos).
 
     Args:
-        query: Specific search query in *English* (required)
-        top_k: Max candidates to retrieve before relevance filtering (default: 5)
+        query: The search query in *English* (required) — same topic as documents
+        top_k: Maximum number of results to return (default: 10)
 
     Returns:
-        Formatted list of relevant videos, or an explicit no-relevant-videos message
+        Formatted list of videos, or "No videos found for `query`"
     """
     try:
         endpoint_url = os.getenv('MARQO_ENDPOINT_URL')
@@ -291,19 +194,11 @@ async def search_videos(
         if not index_name:
             raise ValueError("Marqo index name is required")
 
-        min_score = float(os.getenv("MARQO_VIDEO_MIN_SCORE", str(DEFAULT_VIDEO_MIN_SCORE)))
         client = marqo.Client(url=endpoint_url)
-        logger.info(
-            "search_videos query=%r index=%s top_k=%s min_score=%s",
-            query,
-            index_name,
-            top_k,
-            min_score,
-        )
+        logger.info(f"Searching videos for '{query}' in index '{index_name}' limit={top_k}")
 
-        # Hybrid: lexical match helps scheme/crop names; tensor adds semantic recall.
-        # Falls back to tensor-only if the index rejects hybrid parameters.
-        search_params = {
+        # Identical hybrid setup to search_documents; only filter_string differs.
+        hybrid_params = {
             "q": query,
             "limit": top_k,
             "filter_string": "type:video",
@@ -316,13 +211,15 @@ async def search_videos(
             },
         }
 
+        results: list = []
         try:
-            results = client.index(index_name).search(**search_params)["hits"]
+            results = client.index(index_name).search(**hybrid_params)["hits"]
         except Exception as hybrid_err:
-            logger.warning(
-                "search_videos hybrid failed (%s); falling back to tensor",
-                hybrid_err,
-            )
+            logger.warning("search_videos hybrid error (%s); trying tensor", hybrid_err)
+
+        # Some video-only indexes return empty for hybrid; tensor matches documents' recall better there.
+        if not results:
+            logger.info("search_videos hybrid empty; falling back to tensor query=%r", query)
             results = client.index(index_name).search(
                 q=query,
                 limit=top_k,
@@ -331,43 +228,30 @@ async def search_videos(
             )["hits"]
 
         if len(results) == 0:
-            # Nothing in index — do not invent or substitute other clips.
-            logger.info("search_videos marqo empty query=%r", query)
-            return format_videos_for_agent(query, [])
+            return f"No videos found for `{query}`"
 
         lang_code = ctx.deps.lang_code
         search_hits = [SearchHit(**hit, lang_code=lang_code) for hit in results]
-        for h in search_hits:
-            logger.info(
-                "search_videos candidate name=%s score=%.4f",
-                h.name,
-                h.score,
-            )
-
-        # Strict gate: only on-topic + min score. Never use unfiltered top-K.
-        relevant = filter_relevant_video_hits(search_hits, query, min_score=min_score)
-        relevant = relevant[:AGUI_VIDEO_LIMIT]
-        resources = collect_video_resources(relevant, limit=AGUI_VIDEO_LIMIT)
-
-        if not resources:
-            # Off-topic / low score / no playable URL — return nothing to agent & UI.
-            logger.info(
-                "search_videos returning empty (no relevant) query=%r raw_candidates=%s",
-                query,
-                len(search_hits),
-            )
-            return format_videos_for_agent(query, [])
-
-        payload: list[dict[str, Any]] = [r.to_ag_ui_dict() for r in resources]
-        ctx.deps.add_related_videos(payload)
         logger.info(
-            "search_videos stored %s relevant AG-UI video(s) session=%s query=%r titles=%s",
-            len(payload),
-            getattr(ctx.deps, "session_id", ""),
+            "search_videos hits=%s top=%s query=%r",
+            len(search_hits),
+            [(h.name, round(h.score, 4)) for h in search_hits[:3]],
             query,
-            [r.title for r in resources],
         )
-        return format_videos_for_agent(query, relevant)
+
+        # AG-UI: same ranking as agent sees; only need playable http(s) URLs.
+        resources = collect_video_resources(search_hits, limit=AGUI_VIDEO_LIMIT)
+        if resources:
+            payload: list[dict[str, Any]] = [r.to_ag_ui_dict() for r in resources]
+            ctx.deps.add_related_videos(payload)
+            logger.info(
+                "search_videos AG-UI videos=%s session=%s",
+                [r.title for r in resources],
+                getattr(ctx.deps, "session_id", ""),
+            )
+
+        video_string = "\n\n----\n\n".join(str(document) for document in search_hits)
+        return "> Videos for `" + query + "`\n\n" + video_string
 
     except Exception as e:
         logger.error(f"Error searching videos: {e} for query: {query}")
