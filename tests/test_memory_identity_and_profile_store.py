@@ -2,6 +2,7 @@ import asyncio
 import unittest
 
 from app.services.identity import phone_to_memory_user_id, resolve_memory_user_id
+from app.services.memory import MemoryService
 from app.services.profile import Crop, FarmerProfile, ProfileStore, merge_profile
 
 
@@ -118,6 +119,43 @@ class CropMergeTests(unittest.TestCase):
     def test_single_crop_unaffected(self):
         merged = merge_profile(FarmerProfile(user_id="u"), {"crops": [{"name": "cotton"}]})
         self.assertEqual(["cotton"], [c.name for c in merged.crops])
+
+
+class InferResultSummaryTests(unittest.TestCase):
+    def test_add_and_update_events_report_saved(self):
+        for payload in [
+            {"results": [{"event": "ADD", "memory": "a"}]},
+            {"results": [{"event": "UPDATE", "memory": "a"}]},
+            {"results": [{"event": "DELETE"}, {"event": "ADD"}]},
+            [{"event": "ADD"}],
+        ]:
+            self.assertEqual(
+                "Saved to farmer memory.",
+                MemoryService._summarize_add_result(payload, True),
+            )
+
+    def test_noop_events_report_already_saved(self):
+        for payload in [
+            {"results": [{"event": "NOOP"}]},
+            {"results": [{"event": "NONE"}]},
+        ]:
+            self.assertEqual(
+                "Already saved — this memory is up to date.",
+                MemoryService._summarize_add_result(payload, True),
+            )
+
+    def test_unknown_shapes_default_to_saved(self):
+        for payload in [None, "ok", {"results": []}, [], {"unexpected": 1}]:
+            self.assertEqual(
+                "Saved to farmer memory.",
+                MemoryService._summarize_add_result(payload, True),
+            )
+
+    def test_non_infer_always_saved(self):
+        self.assertEqual(
+            "Saved to farmer memory.",
+            MemoryService._summarize_add_result({"results": [{"event": "NOOP"}]}, False),
+        )
 
 
 if __name__ == "__main__":
