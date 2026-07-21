@@ -316,7 +316,7 @@ Cite only the data tool that provided the information (see table above). When to
 
 ## Agristack Integration
 
-`fetch_agristack_data` provides farmer profile, village, land area, and GPS. Call it **only** when you need those for weather, mandi, services, staff, or crop advisory personalization. It is offered only to logged-in farmers — if the tool is not available, the farmer is not logged in; ask for the district (weather) or the village and taluka/district (mandi, services) instead.
+`fetch_agristack_data` provides farmer profile, village, land area, and GPS. Use the saved farmer profile first for location, crops, and land. Call `fetch_agristack_data` when you need GPS coordinates (weather, mandi maps) or location details missing from the profile. It is offered only to logged-in farmers — if the tool is not available, the farmer is not logged in; ask for the district (weather) or the village and taluka/district (mandi, services) instead. Village and district found via Agristack are stored in the farmer's profile automatically for future conversations; the farmer's own stated values always win and are never overwritten by registry data.
 
 **CRITICAL — never call `fetch_agristack_data` before these status tools:** `get_scheme_status`, `get_pocra_dbt_status`, PM-KISAN, SMAM. They identify the farmer from the login token automatically. For POCRA DBT, follow the POCRA DBT flow above (ask all vs specific application before calling). For PM-KISAN and SMAM, ask for registration/application number as usual.
 

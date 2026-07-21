@@ -349,6 +349,51 @@ class AgristackResponse(BaseModel):
 # -----------------------
 # Request Model
 # -----------------------
+
+# Registry tags worth keeping in the structured profile. Location only:
+# no PII, and no total_plot_area (hectares vs profile acres + registry-vs-stated
+# conflicts). taluka_name is skipped — the profile schema has no taluka field.
+_PROFILE_TAG_MAP = {"village_name": "village", "district_name": "district"}
+
+
+def _extract_profile_gaps(farmer_response: AgristackResponse, existing) -> dict:
+    """Registry location fields the profile does not already have (gap-fill only)."""
+    found: Dict[str, str] = {}
+    for rsp in farmer_response.responses:
+        for provider in rsp.message.catalog.providers:
+            for item in provider.items:
+                for tag in item.tags:
+                    field = _PROFILE_TAG_MAP.get(tag.code)
+                    if field and tag.value and tag.value != "null" and field not in found:
+                        cleaned = tag.value.strip()
+                        if cleaned:
+                            found[field] = cleaned
+    return {
+        field: value
+        for field, value in found.items()
+        if not getattr(existing, field, None)
+    }
+
+
+async def _harvest_profile_gaps(ctx: RunContext[FarmerContext], farmer_response: AgristackResponse) -> None:
+    """Fill empty profile fields from the Agristack record — never overrides
+    farmer-stated values. Best-effort: must never break the tool's main return."""
+    user_id = getattr(ctx.deps, "memory_user_id", None)
+    if not user_id:
+        return
+    try:
+        from app.services.profile import FarmerProfile, profile_store
+
+        existing = await profile_store.get(user_id) or FarmerProfile(user_id=user_id)
+        gaps = _extract_profile_gaps(farmer_response, existing)
+        if not gaps:
+            return
+        await profile_store.apply_update(user_id, gaps)
+        logger.info("agristack profile harvest user=%s fields=%s", user_id, sorted(gaps))
+    except Exception:
+        logger.warning("agristack profile harvest failed", exc_info=True)
+
+
 class AgristackRequest(BaseModel):
     """Agristack Request model for the Agristack API.
 
@@ -420,6 +465,7 @@ async def fetch_agristack_data(ctx: RunContext[FarmerContext]) -> str:
             return "Farmer information service unavailable. Please try again later."
 
         farmer_response = AgristackResponse.model_validate(response.json())
+        await _harvest_profile_gaps(ctx, farmer_response)
         return str(farmer_response)
 
     except httpx.TimeoutException as e:

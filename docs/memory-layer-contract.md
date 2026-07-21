@@ -123,6 +123,13 @@ comma-joined crop names (e.g. `"soyabean, maize"`) are split into separate crop
 entries on write. A channel must not introduce a differently named field for the
 same concept.
 
+Registry gap-fill: after a successful authenticated Agristack fetch, a channel may
+fill profile fields that are currently EMPTY — `village` and `district` only — from
+the farmer's registry record, so later conversations start with location context.
+Registry data must never overwrite a farmer-stated value, never write PII fields,
+and never write `total_plot_area` (hectares vs. profile acres). Farmer-stated
+facts always win over registry data.
+
 ## Agent operation contract
 
 All channels must expose equivalent operations, even if their local tool names differ:

@@ -5,6 +5,8 @@ from unittest.mock import AsyncMock, patch
 import httpx
 
 from agents.tools import TOOLS, _require_farmer_identity
+from agents.tools.agristack import AgristackResponse, _extract_profile_gaps
+from app.services.profile import FarmerProfile
 
 
 def _ctx(*, farmer_id=None, unique_id=None):
@@ -77,6 +79,148 @@ class AgristackIdentityFallbackTests(unittest.IsolatedAsyncioTestCase):
             result = await agristack_module.fetch_agristack_data(ctx)
 
         self.assertIn("not available", result)
+
+
+def _agristack_payload(tags):
+    ctx = {
+        "action": "search",
+        "timestamp": "2026-07-21T09:00:00Z",
+        "message_id": "m-1",
+        "transaction_id": "t-1",
+        "domain": "advisory:mh-vistaar",
+        "version": "1.1.0",
+    }
+    return {
+        "context": ctx,
+        "responses": [
+            {
+                "context": ctx,
+                "message": {
+                    "catalog": {
+                        "providers": [
+                            {
+                                "id": "p1",
+                                "descriptor": {"name": "Agristack"},
+                                "items": [
+                                    {
+                                        "id": "i1",
+                                        "descriptor": {"name": "Farmer"},
+                                        "tags": tags,
+                                    }
+                                ],
+                                "locations": [{"gps": "13.34,77.10"}],
+                            }
+                        ]
+                    }
+                },
+            }
+        ],
+    }
+
+
+_LOCATION_TAGS = [
+    {"code": "village_name", "value": "Huliyar"},
+    {"code": "district_name", "value": "Tumkur"},
+    {"code": "taluka_name", "value": "Chiknayakanhalli"},
+    {"code": "mobile", "value": "9999999969"},
+    {"code": "total_plot_area", "value": "0.81"},
+]
+
+
+class AgristackProfileHarvestTests(unittest.TestCase):
+    def test_empty_profile_gets_village_and_district(self):
+        response = AgristackResponse.model_validate(_agristack_payload(_LOCATION_TAGS))
+        gaps = _extract_profile_gaps(response, FarmerProfile(user_id="u"))
+        self.assertEqual({"village": "Huliyar", "district": "Tumkur"}, gaps)
+
+    def test_farmer_stated_values_never_overwritten(self):
+        response = AgristackResponse.model_validate(_agristack_payload(_LOCATION_TAGS))
+        existing = FarmerProfile(user_id="u", village="Bhadgaon", district="Jalgaon")
+        self.assertEqual({}, _extract_profile_gaps(response, existing))
+
+    def test_only_empty_fields_filled(self):
+        response = AgristackResponse.model_validate(_agristack_payload(_LOCATION_TAGS))
+        existing = FarmerProfile(user_id="u", village="Bhadgaon")
+        self.assertEqual({"district": "Tumkur"}, _extract_profile_gaps(response, existing))
+
+    def test_pii_plot_area_and_taluka_never_harvested(self):
+        response = AgristackResponse.model_validate(_agristack_payload(_LOCATION_TAGS))
+        gaps = _extract_profile_gaps(response, FarmerProfile(user_id="u"))
+        self.assertNotIn("mobile", gaps)
+        self.assertNotIn("land_area_acres", gaps)
+        self.assertNotIn("taluka", gaps)
+
+
+class _FakeResponse:
+    status_code = 200
+
+    def __init__(self, payload):
+        self._payload = payload
+
+    def json(self):
+        return self._payload
+
+
+class _FakeAsyncClient:
+    def __init__(self, payload):
+        self._payload = payload
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        return False
+
+    async def post(self, url, json=None, timeout=None):
+        return _FakeResponse(self._payload)
+
+
+class AgristackToolHarvestWiringTests(unittest.IsolatedAsyncioTestCase):
+    async def _run_tool(self, existing_profile):
+        from agents.tools import agristack as agristack_module
+        from app.services.profile import profile_store
+
+        ctx = SimpleNamespace(
+            deps=SimpleNamespace(farmer_id="F-1", unique_id=None, memory_user_id="u-1")
+        )
+        payload = _agristack_payload(_LOCATION_TAGS)
+        with patch.object(profile_store, "get", new=AsyncMock(return_value=existing_profile)), patch.object(
+            profile_store, "apply_update", new=AsyncMock()
+        ) as apply_update, patch(
+            "httpx.AsyncClient", lambda *a, **k: _FakeAsyncClient(payload)
+        ):
+            result = await agristack_module.fetch_agristack_data(ctx)
+        return result, apply_update
+
+    async def test_fetch_harvests_location_into_empty_profile(self):
+        result, apply_update = await self._run_tool(None)
+        apply_update.assert_awaited_once_with(
+            "u-1", {"village": "Huliyar", "district": "Tumkur"}
+        )
+        self.assertIn("Farmer Information", result)
+
+    async def test_fetch_skips_harvest_when_profile_complete(self):
+        existing = FarmerProfile(user_id="u-1", village="Bhadgaon", district="Jalgaon")
+        result, apply_update = await self._run_tool(existing)
+        apply_update.assert_not_awaited()
+        self.assertIn("Farmer Information", result)
+
+
+class AgristackPrecedencePromptTests(unittest.TestCase):
+    def test_prompts_state_profile_first_and_auto_harvest(self):
+        from pathlib import Path
+
+        expected = {
+            "en": ("Use the saved farmer profile first", "stored in the farmer's profile automatically"),
+            "hi": ("पहले सहेजी गई किसान प्रोफ़ाइल उपयोग करें", "अपने आप सहेजे जाते हैं"),
+            "mr": ("आधी सेव्ह केलेली शेतकरी प्रोफाइल वापरा", "प्रोफाइलमध्ये आपोआप सेव्ह होतात"),
+            "bhb": ("पेला सेव्ह रेहेली शेतकरी प्रोफाइल वापरो", "प्रोफाइल म आपोआप सेव्ह रेहे"),
+        }
+        for lang, (profile_first, auto_store) in expected.items():
+            with self.subTest(language=lang):
+                text = Path(f"assets/prompts/agrinet_system_{lang}.md").read_text()
+                self.assertIn(profile_first, text)
+                self.assertIn(auto_store, text)
 
 
 if __name__ == "__main__":
