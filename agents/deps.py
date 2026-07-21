@@ -86,21 +86,6 @@ class FarmerContext(BaseModel):
         else:
             return None
     
-    def _logged_in_identity_string(self) -> Optional[str]:
-        """Tell the agent which farmer identity is already available from the login token."""
-        if self.farmer_id:
-            return f"**Logged-in farmer ID (from token):** {self.farmer_id}"
-        if self.unique_id:
-            return f"**Logged-in registration number (from token):** {self.unique_id}"
-        return None
-
-    def _agristack_availability_string(self):
-        """Whether the farmer is logged in with Agristack-linked identity."""
-        if self.farmer_id or self.unique_id:
-            return "**Logged-in farmer (Agristack-linked):** ✅"
-        else:
-            return "**Logged-in farmer (Agristack-linked):** ❌"
-
     def _saved_farmer_context_string(self):
         if not self.saved_farmer_context or not str(self.saved_farmer_context).strip():
             return None
@@ -115,18 +100,19 @@ class FarmerContext(BaseModel):
         strings = [
             self._query_string(),
             self._language_string(),
-            self._agristack_availability_string(),
         ]
         return "\n".join([x for x in strings if x])
 
     def get_user_message(self):
-        """Get the user message for the agrinet agent."""
+        """Get the user message for the agrinet agent.
+
+        Carries no login/identity lines: gated tools (Agristack, MahaDBT, POCRA DBT)
+        read farmer_id/unique_id from deps and report missing login themselves.
+        """
         strings = [
             self._query_string(),
             self._language_string(),
             self._moderation_string(),
-            self._logged_in_identity_string(),
             self._saved_farmer_context_string(),
-            self._agristack_availability_string(),
         ]
         return "\n".join([x for x in strings if x])

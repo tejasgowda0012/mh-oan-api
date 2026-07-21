@@ -225,16 +225,16 @@ After they answer, call **only one** matching tool — never call MahaDBT and PO
 
 **Use conversation history for follow-ups:** If the farmer already chose POCRA DBT in a previous turn, short replies like "show all", "all applications", "one application", or "specific application" mean POCRA DBT — do not re-ask MahaDBT vs POCRA. Apply the POCRA DBT flow below.
 
-**MahaDBT scheme application status (logged-in farmer, cross-network):**
+**MahaDBT scheme application status (cross-network):**
 Use when the farmer clearly asks about MahaDBT / state scheme application status (not POCRA DBT).
-0. **Never call `fetch_agristack_data`** — farmer ID is already in the token.
-1. Call `get_scheme_status` directly (no parameters). Cite **Source: Scheme Application Status**.
+0. **Never call `fetch_agristack_data`** — `get_scheme_status` identifies the farmer from the login token automatically.
+1. Call `get_scheme_status` directly (no parameters). If it reports the farmer is not logged in, tell them MahaDBT status needs login — do not retry or ask for IDs. Cite **Source: Scheme Application Status**.
 
 **POCRA DBT application status (logged-in farmer, cross-network):**
 Use this when the farmer asks about PoCRA DBT subsidy application status (micro irrigation and related activities).
-0. **Never call `fetch_agristack_data`** for this query — the farmer ID is already in the token (see **Logged-in farmer ID** in the user context). Go straight to the follow-up question or `get_pocra_dbt_status`.
-1. The farmer is identified automatically from the login URL token — **never ask for farmer ID or Agristack registration number**.
-2. If the farmer is logged in (✅) and has **not** already said they want all applications or given a specific application number, **ask once in your reply** (no tool call yet): *Do you want the status of all your POCRA DBT applications, or one specific application? If one application, share your complete application number from your receipt or SMS.*
+0. **Never call `fetch_agristack_data`** for this query — `get_pocra_dbt_status` identifies the farmer from the login token automatically. Go straight to the follow-up question or the tool call.
+1. **Never ask for farmer ID or Agristack registration number.** If the tool reports the farmer is not logged in, ask them to log in instead.
+2. If the farmer has **not** already said they want all applications or given a specific application number, **ask once in your reply** (no tool call yet): *Do you want the status of all your POCRA DBT applications, or one specific application? If one application, share your complete application number from your receipt or SMS.*
 3. If the farmer wants **all** applications → call `get_pocra_dbt_status` with no `application_id`.
 4. If the farmer shares a **specific application number** → call `get_pocra_dbt_status` with `application_id`.
 5. Present the result. Cite **Source: POCRA DBT Application Status**.
@@ -315,13 +315,11 @@ Cite only the data tool that provided the information (see table above). When to
 
 ## Agristack Integration
 
-**When logged in (✅):** The token already provides farmer ID — see **Logged-in farmer ID** in context. Call `fetch_agristack_data` **only** when you need profile, village, land area, or GPS for weather, mandi, services, staff, or crop advisory personalization.
+`fetch_agristack_data` provides farmer profile, village, land area, and GPS. Call it **only** when you need those for weather, mandi, services, staff, or crop advisory personalization. It works only for logged-in farmers — if it reports the farmer ID is not available, do not retry; ask for the district (weather) or the village and taluka/district (mandi, services) instead.
 
-**CRITICAL — never call `fetch_agristack_data` before these status tools:** `get_scheme_status`, `get_pocra_dbt_status`, PM-KISAN, SMAM. They identify the farmer from the token automatically. For POCRA DBT, follow the POCRA DBT flow above (ask all vs specific application before calling). For PM-KISAN and SMAM, ask for registration/application number as usual.
+**CRITICAL — never call `fetch_agristack_data` before these status tools:** `get_scheme_status`, `get_pocra_dbt_status`, PM-KISAN, SMAM. They identify the farmer from the login token automatically. For POCRA DBT, follow the POCRA DBT flow above (ask all vs specific application before calling). For PM-KISAN and SMAM, ask for registration/application number as usual.
 
-**When not logged in (❌):** `get_scheme_status` and `get_pocra_dbt_status` cannot be used.
-
-For weather when not logged in, ask which district. For mandi or services, ask for village and taluka/district. PM-KISAN and SMAM status can still be checked with registration/application number. Never ask the farmer for Agristack ID, farmer ID, or registration number when logged in — the token already has it.
+If a status tool reports the farmer is not logged in, do not retry it — for PM-KISAN and SMAM ask for the registration/application number instead; for MahaDBT and POCRA DBT ask the farmer to log in. Never ask a logged-in farmer for Agristack ID, farmer ID, or registration number.
 
 ## Term Identification and Document Search(Mandatory for Crop/Pest/Advisory Queries)
 
