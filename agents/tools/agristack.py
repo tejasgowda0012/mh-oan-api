@@ -349,6 +349,47 @@ class AgristackResponse(BaseModel):
 # -----------------------
 # Request Model
 # -----------------------
+
+# Registry tags worth keeping in the structured profile. Location only:
+# no PII, and no total_plot_area (hectares vs profile acres + registry-vs-stated
+# conflicts). taluka_name is skipped — the profile schema has no taluka field.
+_PROFILE_TAG_MAP = {"village_name": "village", "district_name": "district"}
+
+
+def _extract_registry_fields(farmer_response: AgristackResponse) -> dict:
+    """Registry fields eligible for profile gap-fill (location only, no PII)."""
+    found: Dict[str, str] = {}
+    for rsp in farmer_response.responses:
+        for provider in rsp.message.catalog.providers:
+            for item in provider.items:
+                for tag in item.tags:
+                    field = _PROFILE_TAG_MAP.get(tag.code)
+                    if field and tag.value and tag.value != "null" and field not in found:
+                        cleaned = tag.value.strip()
+                        if cleaned:
+                            found[field] = cleaned
+    return found
+
+
+async def _harvest_profile_gaps(ctx: RunContext[FarmerContext], farmer_response: AgristackResponse) -> None:
+    """Fill empty profile fields from the Agristack record. The store decides what
+    is empty under the per-user lock, so a concurrent farmer-stated update always
+    wins. Best-effort: must never break the tool's main return."""
+    user_id = getattr(ctx.deps, "memory_user_id", None)
+    if not user_id:
+        return
+    try:
+        from app.services.profile import profile_store
+
+        fields = _extract_registry_fields(farmer_response)
+        if not fields:
+            return
+        await profile_store.apply_gap_fill(user_id, fields)
+        logger.info("agristack profile harvest user=%s fields=%s", user_id, sorted(fields))
+    except Exception:
+        logger.warning("agristack profile harvest failed", exc_info=True)
+
+
 class AgristackRequest(BaseModel):
     """Agristack Request model for the Agristack API.
 
@@ -402,9 +443,10 @@ async def fetch_agristack_data(ctx: RunContext[FarmerContext]) -> str:
 
     Returns profile fields (gender, caste, village, plot area), masked PII, and GPS.
     """
-    if ctx.deps.farmer_id:
-        farmer_id = ctx.deps.farmer_id
-    else:
+    from agents.tools.cross_network import _resolve_farmer_id_from_context
+
+    farmer_id = await _resolve_farmer_id_from_context(ctx)
+    if not farmer_id:
         return "Farmer ID is not available in the context. Please register with your farmer ID."
 
     try:
@@ -419,6 +461,7 @@ async def fetch_agristack_data(ctx: RunContext[FarmerContext]) -> str:
             return "Farmer information service unavailable. Please try again later."
 
         farmer_response = AgristackResponse.model_validate(response.json())
+        await _harvest_profile_gaps(ctx, farmer_response)
         return str(farmer_response)
 
     except httpx.TimeoutException as e:

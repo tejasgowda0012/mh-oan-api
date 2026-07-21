@@ -227,19 +227,33 @@ class ProfileStore:
     def __init__(self) -> None:
         self._client = None
         self._last_init_failure: Optional[float] = None
-        # apply_update / apply_removal are read-modify-write; concurrent tool calls
-        # from one agent turn must serialize per farmer or the last upsert clobbers
-        # the other's field.
-        self._update_locks: dict[str, asyncio.Lock] = {}
+        # apply_update / apply_removal / apply_gap_fill are read-modify-write;
+        # concurrent tool calls from one agent turn must serialize per farmer or
+        # the last upsert clobbers the other's field. Values are (lock, in-flight
+        # refcount); entries are evicted on release at refcount zero so the dict
+        # cannot grow for the process lifetime. The refcount (not locked()/waiters)
+        # is what makes eviction safe: a task that fetched the lock but has not
+        # entered it yet still holds a count.
+        self._update_locks: dict[str, tuple[asyncio.Lock, int]] = {}
         self._update_locks_guard = asyncio.Lock()
 
     async def _user_lock(self, user_id: str) -> asyncio.Lock:
         async with self._update_locks_guard:
-            lock = self._update_locks.get(user_id)
-            if lock is None:
-                lock = asyncio.Lock()
-                self._update_locks[user_id] = lock
-            return lock
+            entry = self._update_locks.get(user_id)
+            if entry is None:
+                entry = (asyncio.Lock(), 0)
+            self._update_locks[user_id] = (entry[0], entry[1] + 1)
+            return entry[0]
+
+    async def _release_user_lock(self, user_id: str, lock: asyncio.Lock) -> None:
+        async with self._update_locks_guard:
+            entry = self._update_locks.get(user_id)
+            if entry is None or entry[0] is not lock:
+                return
+            if entry[1] <= 1:
+                self._update_locks.pop(user_id, None)
+            else:
+                self._update_locks[user_id] = (lock, entry[1] - 1)
 
     def _qdrant_host_port(self) -> tuple[str, int]:
         return (
@@ -322,22 +336,51 @@ class ProfileStore:
 
     async def apply_update(self, user_id: str, partial: dict) -> FarmerProfile:
         lock = await self._user_lock(user_id)
-        async with lock:
-            existing = await self.get(user_id) or FarmerProfile(user_id=user_id)
-            merged = merge_profile(existing, partial)
-            await self.save(merged)
-            return merged
+        try:
+            async with lock:
+                existing = await self.get(user_id) or FarmerProfile(user_id=user_id)
+                merged = merge_profile(existing, partial)
+                await self.save(merged)
+                return merged
+        finally:
+            await self._release_user_lock(user_id, lock)
 
     async def apply_removal(self, user_id: str, field: str, value: str) -> bool:
         lock = await self._user_lock(user_id)
-        async with lock:
-            existing = await self.get(user_id)
-            if not existing:
-                return False
-            updated, changed = remove_profile_value(existing, field, value)
-            if changed:
-                await self.save(updated)
-            return changed
+        try:
+            async with lock:
+                existing = await self.get(user_id)
+                if not existing:
+                    return False
+                updated, changed = remove_profile_value(existing, field, value)
+                if changed:
+                    await self.save(updated)
+                return changed
+        finally:
+            await self._release_user_lock(user_id, lock)
+
+    async def apply_gap_fill(self, user_id: str, partial: dict) -> FarmerProfile:
+        """Fill only scalar fields that are empty at write time (registry gap-fill).
+
+        The emptiness check runs under the per-user lock so a concurrent
+        farmer-stated update always wins over registry data.
+        """
+        lock = await self._user_lock(user_id)
+        try:
+            async with lock:
+                existing = await self.get(user_id) or FarmerProfile(user_id=user_id)
+                gaps = {
+                    field: value
+                    for field, value in partial.items()
+                    if value not in (None, "", []) and not getattr(existing, field, None)
+                }
+                if not gaps:
+                    return existing
+                merged = merge_profile(existing, gaps)
+                await self.save(merged)
+                return merged
+        finally:
+            await self._release_user_lock(user_id, lock)
 
     async def get_snapshot(self, user_id: str) -> Optional[str]:
         profile = await self.get(user_id)

@@ -6,6 +6,7 @@ Chat uses in-conversation tools to search and save memories (no post-session job
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import os
 import time
@@ -111,6 +112,10 @@ class MemoryService:
     def __init__(self) -> None:
         self._client = None
         self._last_init_failure: Optional[float] = None
+        # Whether the installed mem0 Memory.add accepts the `infer` kwarg —
+        # detected once via signature, never via try/except around the write
+        # (a late TypeError inside mem0 would otherwise retry and duplicate).
+        self._add_supports_infer: bool = True
 
     def _get_client(self):
         if self._client is not None:
@@ -125,6 +130,9 @@ class MemoryService:
 
             _patch_mem0_disable_thinking()
             self._client = Memory.from_config(_build_mem0_config())
+            self._add_supports_infer = "infer" in inspect.signature(
+                self._client.add
+            ).parameters
             self._last_init_failure = None
             logger.info("MemoryService: mem0 client initialized")
         except Exception:
@@ -223,20 +231,25 @@ class MemoryService:
 
     @staticmethod
     def _summarize_add_result(result, infer: bool) -> str:
-        """Turn mem0's add() response into a tool-facing string (no IDs)."""
+        """Turn mem0's add() response into a tool-facing string (no IDs).
+
+        mem0 2.x infer is additive with exact-hash dedup: it emits ADD events,
+        or an empty results list when every extracted fact was a duplicate (or
+        nothing was extracted). Older 0.1.x versions may emit UPDATE/DELETE/NOOP.
+        """
         if not infer:
             return "Saved to farmer memory."
         results = result.get("results") if isinstance(result, dict) else result
-        if not isinstance(results, list) or not results:
+        if isinstance(results, list) and not results:
+            return "Already saved — nothing new to store."
+        if not isinstance(results, list):
             return "Saved to farmer memory."
         events = {
             str(r.get("event", "")).upper() for r in results if isinstance(r, dict)
         }
         events.discard("")
-        if events & {"ADD", "UPDATE", "DELETE"}:
-            return "Saved to farmer memory."
         if events <= {"NOOP", "NONE"} and events:
-            return "Already saved — this memory is up to date."
+            return "Already saved — nothing new to store."
         return "Saved to farmer memory."
 
     async def add_fact(
@@ -247,8 +260,8 @@ class MemoryService:
         source: str = "chat_tool",
         infer: bool = True,
     ) -> str:
-        """Store a farmer memory. With infer=True, mem0 extracts atomic facts from the text
-        and reconciles them against existing memories (ADD / UPDATE / DELETE / NOOP)."""
+        """Store a farmer memory. With infer=True, mem0 extracts atomic facts from
+        the text and skips exact duplicates (additive — it does not supersede)."""
         client = self._get_client()
         if not client or not user_id:
             return "Memory storage is not available for this session."
@@ -257,19 +270,13 @@ class MemoryService:
             return "Nothing to save — memory text was empty."
 
         def _add():
-            try:
-                return client.add(
-                    [{"role": "user", "content": text}],
-                    user_id=user_id,
-                    metadata={"source": source, "channel": "chat"},
-                    infer=infer,
-                )
-            except TypeError:
-                return client.add(
-                    [{"role": "user", "content": text}],
-                    user_id=user_id,
-                    metadata={"source": source, "channel": "chat"},
-                )
+            kwargs = {
+                "user_id": user_id,
+                "metadata": {"source": source, "channel": "chat"},
+            }
+            if self._add_supports_infer:
+                kwargs["infer"] = infer
+            return client.add([{"role": "user", "content": text}], **kwargs)
 
         try:
             result = await asyncio.get_event_loop().run_in_executor(None, _add)

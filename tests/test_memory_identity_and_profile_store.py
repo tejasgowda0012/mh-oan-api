@@ -121,6 +121,49 @@ class CropMergeTests(unittest.TestCase):
         self.assertEqual(["cotton"], [c.name for c in merged.crops])
 
 
+class GapFillTests(unittest.IsolatedAsyncioTestCase):
+    async def test_gap_fill_fills_only_empty_fields(self):
+        backend = FakeProfileBackend()
+        backend.payload = FarmerProfile(user_id="u", village="Bhadgaon").model_dump()
+        store = _wired_store(backend)
+        await store.apply_gap_fill("u", {"village": "Registryville", "district": "Tumkur"})
+        final = FarmerProfile(**backend.payload)
+        self.assertEqual("Bhadgaon", final.village)
+        self.assertEqual("Tumkur", final.district)
+
+    async def test_gap_fill_writes_nothing_when_no_empty_fields(self):
+        backend = FakeProfileBackend()
+        backend.payload = FarmerProfile(
+            user_id="u", village="Bhadgaon", district="Jalgaon"
+        ).model_dump()
+        store = _wired_store(backend)
+        await store.apply_gap_fill("u", {"village": "X", "district": "Y"})
+        self.assertEqual("Bhadgaon", FarmerProfile(**backend.payload).village)
+
+    async def test_gap_fill_creates_profile_when_absent(self):
+        backend = FakeProfileBackend()
+        store = _wired_store(backend)
+        await store.apply_gap_fill("u", {"district": "Tumkur"})
+        self.assertEqual("Tumkur", FarmerProfile(**backend.payload).district)
+
+
+class LockLifecycleTests(unittest.IsolatedAsyncioTestCase):
+    async def test_lock_entry_evicted_after_use(self):
+        backend = FakeProfileBackend()
+        store = _wired_store(backend)
+        await store.apply_update("u-1", {"village": "Bhadgaon"})
+        self.assertEqual({}, store._update_locks)
+
+    async def test_concurrent_users_get_independent_locks_and_evict(self):
+        backend = FakeProfileBackend()
+        store = _wired_store(backend)
+        await asyncio.gather(
+            store.apply_update("u-1", {"village": "A"}),
+            store.apply_update("u-2", {"village": "B"}),
+        )
+        self.assertEqual({}, store._update_locks)
+
+
 class InferResultSummaryTests(unittest.TestCase):
     def test_add_and_update_events_report_saved(self):
         for payload in [
@@ -134,18 +177,27 @@ class InferResultSummaryTests(unittest.TestCase):
                 MemoryService._summarize_add_result(payload, True),
             )
 
-    def test_noop_events_report_already_saved(self):
+    def test_empty_results_report_nothing_new(self):
+        """mem0 2.x dedup-skip / no-facts-extracted response."""
+        for payload in [{"results": []}, []]:
+            self.assertEqual(
+                "Already saved — nothing new to store.",
+                MemoryService._summarize_add_result(payload, True),
+            )
+
+    def test_noop_events_report_nothing_new(self):
+        """Defensive: older mem0 vocabulary."""
         for payload in [
             {"results": [{"event": "NOOP"}]},
             {"results": [{"event": "NONE"}]},
         ]:
             self.assertEqual(
-                "Already saved — this memory is up to date.",
+                "Already saved — nothing new to store.",
                 MemoryService._summarize_add_result(payload, True),
             )
 
     def test_unknown_shapes_default_to_saved(self):
-        for payload in [None, "ok", {"results": []}, [], {"unexpected": 1}]:
+        for payload in [None, "ok", {"unexpected": 1}]:
             self.assertEqual(
                 "Saved to farmer memory.",
                 MemoryService._summarize_add_result(payload, True),
@@ -154,7 +206,7 @@ class InferResultSummaryTests(unittest.TestCase):
     def test_non_infer_always_saved(self):
         self.assertEqual(
             "Saved to farmer memory.",
-            MemoryService._summarize_add_result({"results": [{"event": "NOOP"}]}, False),
+            MemoryService._summarize_add_result({"results": []}, False),
         )
 
 

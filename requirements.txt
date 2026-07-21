@@ -74,7 +74,10 @@ pytz
 langcodes[data]==3.4.0
 
 # Long-term farmer memory (mem0 + Qdrant)
-mem0ai
+# Pinned: the infer pipeline's behavior is version-sensitive — 2.0.12 is
+# additive with exact-hash dedup (no UPDATE/DELETE/NOOP); code, prompts and
+# tests are aligned to that. Review before upgrading.
+mem0ai==2.0.12
 qdrant-client
 
 # Humanize time, date, numbers, etc.

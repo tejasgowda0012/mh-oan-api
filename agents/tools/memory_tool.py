@@ -56,14 +56,17 @@ async def save_farmer_memory(ctx: RunContext[FarmerContext], memory: str) -> str
     """Save durable farmer context for future chats (mem0 infer pipeline).
 
     Pass the farmer's own words (verbatim or lightly trimmed). The memory system
-    extracts the durable facts and reconciles them automatically — it skips
-    duplicates, updates superseded memories, and does nothing when the fact is
-    already stored, so there is no need to recall before saving. Use this for an
-    ongoing farm problem, open follow-up, durable preference, or past advice
-    topic — and also when the farmer explicitly corrects something saved earlier
-    (the system supersedes the old version). Do NOT use for structured profile
-    facts (use `update_farmer_profile`), inferred facts, secrets, OTPs,
-    identifiers, live data, or general knowledge.
+    extracts the durable facts and skips exact duplicates automatically, so there
+    is no need to recall before saving something new. Use this for an ongoing
+    farm problem, open follow-up, durable preference, or past advice topic.
+
+    This tool only ADDS memories — it cannot correct them. When the farmer
+    explicitly corrects something saved earlier, call `recall_farmer_memory`
+    first and then `edit_farmer_memory` with the returned ID so the stale memory
+    is replaced. For explicit forget requests use `delete_farmer_memory`.
+
+    Do NOT use for structured profile facts (use `update_farmer_profile`),
+    inferred facts, secrets, OTPs, identifiers, live data, or general knowledge.
 
     Args:
         memory: The farmer's relevant statement, in English or Marathi.

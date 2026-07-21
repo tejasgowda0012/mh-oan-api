@@ -33,11 +33,15 @@ def _require_farmer_identity(ctx, tool_def):
     """Offer login-gated tools only when the token carries a farmer identity.
 
     Guests never see these tools at all (per-run Tool.prepare), instead of
-    calling them and receiving a not-logged-in message.
+    calling them and receiving a not-logged-in message. Guest-sentinel claim
+    values ("anonymous", "guest", …) count as no identity, same as identity.py.
     """
+    from app.services.identity import _is_guest_value
+
     deps = ctx.deps
-    if getattr(deps, "farmer_id", None) or getattr(deps, "unique_id", None):
-        return tool_def
+    for value in (getattr(deps, "farmer_id", None), getattr(deps, "unique_id", None)):
+        if value is not None and not _is_guest_value(value):
+            return tool_def
     return None
 
 TOOLS = [
