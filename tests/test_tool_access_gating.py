@@ -20,6 +20,13 @@ class FarmerIdentityGatingTests(unittest.TestCase):
     def test_guest_sentinel_strings_get_no_tool(self):
         self.assertIsNone(_require_farmer_identity(_ctx(farmer_id="", unique_id=""), object()))
 
+    def test_guest_sentinel_values_get_no_tool(self):
+        for sentinel in ("guest", "anonymous", "unknown", "unauthenticated", "guest_user"):
+            with self.subTest(sentinel=sentinel):
+                self.assertIsNone(
+                    _require_farmer_identity(_ctx(unique_id=sentinel), object())
+                )
+
     def test_unique_id_offers_tool(self):
         tool_def = object()
         self.assertIs(tool_def, _require_farmer_identity(_ctx(unique_id="2342"), tool_def))

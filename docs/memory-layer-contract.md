@@ -137,8 +137,8 @@ All channels must expose equivalent operations, even if their local tool names d
 | Operation | Chat tool | Required behavior |
 | --- | --- | --- |
 | Recall | `recall_farmer_memory` | Search only the current `memory_user_id`; return matching text with opaque IDs internally. |
-| Create | `save_farmer_memory` | Pass the farmer's own words for the current farmer only. mem0's infer pipeline extracts durable facts and reconciles them automatically (add / update / delete / no-op), so no recall-first is required for saving. |
-| Edit | `edit_farmer_memory` | Recall first, use the returned ID, verify ownership, then replace that one record. Reserved for precise targeted replacement; ordinary corrections go through `save_farmer_memory` and are superseded automatically. |
+| Create | `save_farmer_memory` | Pass the farmer's own words for the current farmer only. mem0's infer pipeline extracts durable facts and skips exact-hash duplicates; it is additive and does not supersede, so no recall-first is required for saving something new. |
+| Edit | `edit_farmer_memory` | Recall first, use the returned ID, verify ownership, then replace that one record. Required for every episodic correction — the additive save path cannot replace a stale memory. |
 | Delete | `delete_farmer_memory` | Recall first, use the returned ID, verify ownership, then delete that one record. |
 | Profile update | `update_farmer_profile` | Save durable structured facts instead of episodic notes. |
 | Profile removal | `remove_farmer_profile_value` | Remove only an explicitly retracted matching structured value. |
@@ -171,8 +171,10 @@ An absent record and a record owned by another farmer must produce the same
 - Retrieve episodic memories on demand with recall when the current message
   references past context or requests a deletion.
 - Write episodic memories through mem0's infer pipeline: pass the farmer's own
-  words to save, and it extracts durable facts, skips duplicates, and supersedes
-  outdated memories automatically. A channel must not store model-composed notes
+  words to save, and it extracts durable facts and skips exact-hash duplicates.
+  The installed pipeline is additive — it never updates or deletes existing
+  memories — so corrections and deletions must go through the ID-targeted
+  edit/delete flow after recall. A channel must not store model-composed notes
   verbatim with `infer=False`.
 - Save only farmer-specific, durable context—not live weather, mandi prices, scheme
   details, or retrieved documents.
