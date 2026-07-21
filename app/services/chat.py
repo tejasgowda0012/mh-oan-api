@@ -81,11 +81,18 @@ async def stream_chat_messages(
     history: list,
     user_info: dict,
     background_tasks: BackgroundTasks,
+    related_videos_out: list | None = None,
 ) -> AsyncGenerator[str, None]:
     """Async generator for streaming chat messages with full Langfuse tracing.
 
     Uses start_as_current_observation (not @observe) so an OpenTelemetry current
     span exists across StreamingResponse/async-generator yields.
+
+    Args:
+        related_videos_out: Optional mutable list. When provided, structured
+            video resources collected by ``search_videos`` during this turn are
+            appended for AG-UI clients (inline playback). Classic ``/chat``
+            callers omit this and keep text-only SSE.
     """
     user_claims = user_info if isinstance(user_info, dict) else {}
     memory_user_id = resolve_memory_user_id(user_id, user_claims)
@@ -200,6 +207,15 @@ async def stream_chat_messages(
                     ):
                         full_output += chunk
                         yield chunk
+
+                # Expose structured videos for AG-UI after the text stream completes.
+                if related_videos_out is not None and deps.related_videos:
+                    related_videos_out.extend(deps.related_videos)
+                    logger.info(
+                        "AG-UI related_videos_out=%s session=%s",
+                        len(deps.related_videos),
+                        session_id,
+                    )
 
                 if moderation_data.category == "valid_agricultural":
                     logger.info(f"Triggering suggestions generation for session {session_id}")

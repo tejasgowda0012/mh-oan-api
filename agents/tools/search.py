@@ -4,17 +4,27 @@ Marqo client implementation for vector search.
 import os
 import re
 import marqo
-from typing import Optional, Literal
+from typing import Any, Optional, Literal
 from pydantic import BaseModel, Field
 from pydantic_ai import ModelRetry, RunContext
 from agents.deps import FarmerContext
 from helpers.utils import get_logger
 from agents.tools.terms import normalize_text_with_glossary
+from agents.tools.video_payload import (
+    VideoResource,
+    dedupe_videos,
+    humanize_video_title,
+    is_http_url,
+    video_resource_from_hit,
+)
 from langfuse import observe
 
 logger = get_logger(__name__)
 
 DocumentType = Literal['video', 'document']
+
+# Max videos exposed to AG-UI players per tool call (prompt also caps display at 2).
+AGUI_VIDEO_LIMIT = 2
 
 
 class SearchHit(BaseModel):
@@ -46,19 +56,70 @@ class SearchHit(BaseModel):
             return self.source or None
         return self.source_mr or None
 
+    @property
+    def video_url(self) -> Optional[str]:
+        """Playback URL for video hits (prefer real http(s) links only)."""
+        if self.type != "video":
+            return None
+        for candidate in (self.source, self.source_mr, self.citation_source):
+            if is_http_url(candidate):
+                return candidate
+        return None
+
+    def to_video_resource(self) -> Optional[VideoResource]:
+        url = self.video_url
+        if not url:
+            return None
+        return video_resource_from_hit(
+            doc_id=self.doc_id or self.id,
+            title=self.name,
+            url=url,
+            description=self.processed_text,
+            source=None,  # never pass slug names like Groundnut_Pest_Control
+        )
+
     def __str__(self) -> str:
         body = "```\n" + self.processed_text + "\n```\n"
         lines = [f"**{self.name}**"]
 
         if self.type == 'video':
-            ref = self.citation_source or self.source
-            if ref:
-                return f"**[{self.name}]({ref})**\n" + body
+            # Human title for agent context only — never present slug as "Source".
+            title = humanize_video_title(self.name)
+            url = self.video_url
+            if url:
+                return f"**{title}**\nPlayback URL (do not show URL or slug names to farmer): {url}\n" + body
+            return f"**{title}**\n" + body
 
         if self.citation_source:
             lines.append(f"Source: {self.citation_source}")
 
         return "\n".join(lines) + "\n" + body
+
+
+def collect_video_resources(hits: list[SearchHit], limit: int = AGUI_VIDEO_LIMIT) -> list[VideoResource]:
+    """Build de-duplicated structured video resources from search hits."""
+    resources: list[VideoResource] = []
+    for hit in hits:
+        resource = hit.to_video_resource()
+        if resource:
+            resources.append(resource)
+    return dedupe_videos(resources)[:limit]
+
+
+def format_videos_for_agent(query: str, hits: list[SearchHit]) -> str:
+    """Human-readable tool return for the LLM (no slug source citations)."""
+    video_string = "\n\n----\n\n".join(str(document) for document in hits)
+    return (
+        f"> Videos for `{query}`\n\n"
+        f"{video_string}\n\n"
+        "IMPORTANT for the farmer-facing answer:\n"
+        "- Never write a Source line for videos (no **Source: Video Resource**, no slugs).\n"
+        "- Do not list video titles or URLs; the UI plays them inline.\n"
+        "- Order: answer → **Source:** (document only) → "
+        "'For more information, watch the videos below.' → follow-up question.\n"
+        "- The cue line must be BEFORE the follow-up question, never after it.\n"
+        "- Only write the cue if videos were found. If farmer ONLY asked for videos: no cue line.\n"
+    )
 
 @observe(name="tool:search_documents", as_type="tool")
 async def search_documents(
@@ -123,13 +184,16 @@ async def search_videos(
 ) -> str:
     """
     Semantic search for videos. Use this tool when recommending videos to the farmer.
+
+    Also stores structured video resources on FarmerContext.related_videos for
+    AG-UI clients to render inline players (not a second tool).
     
     Args:
         query: The search query in *English* (required)
-        top_k: Maximum number of results to return (default: 3)
+        top_k: Maximum number of results to return (default: 10)
         
     Returns:
-        search_results: Formatted list of videos
+        search_results: Formatted list of videos for the agent
     """
     try:
         # Initialize Marqo client
@@ -159,8 +223,16 @@ async def search_videos(
         else:
             lang_code = ctx.deps.lang_code
             search_hits = [SearchHit(**hit, lang_code=lang_code) for hit in results]
-            video_string = '\n\n----\n\n'.join([str(document) for document in search_hits])
-            return "> Videos for `" + query + "`\n\n" + video_string
+            resources = collect_video_resources(search_hits, limit=AGUI_VIDEO_LIMIT)
+            if resources:
+                payload: list[dict[str, Any]] = [r.to_ag_ui_dict() for r in resources]
+                ctx.deps.add_related_videos(payload)
+                logger.info(
+                    "search_videos stored %s AG-UI video(s) for session=%s",
+                    len(payload),
+                    getattr(ctx.deps, "session_id", ""),
+                )
+            return format_videos_for_agent(query, search_hits)
         
     except Exception as e:
         logger.error(f"Error searching documents: {e} for query: {query}")

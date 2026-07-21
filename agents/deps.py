@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field, field_validator
 from langcodes import Language
 
@@ -36,6 +36,24 @@ class FarmerContext(BaseModel):
         description="Structured profile snapshot pre-loaded on the first conversation turn.",
     )
     user_info: Dict[str, Any] = Field(default_factory=dict, description="Authenticated user metadata.")
+    # Populated by search_videos for AG-UI inline players (not part of the LLM prompt).
+    related_videos: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Structured video resources collected during this turn for AG-UI playback.",
+    )
+
+    def add_related_videos(self, videos: List[Dict[str, Any]]) -> None:
+        """Append unique structured videos for AG-UI clients."""
+        if not videos:
+            return
+        seen = {v.get("url") or v.get("id") for v in self.related_videos}
+        for video in videos:
+            key = video.get("url") or video.get("id")
+            if key and key in seen:
+                continue
+            if key:
+                seen.add(key)
+            self.related_videos.append(video)
 
     @field_validator("farmer_id", "unique_id", "memory_user_id", mode="before")
     @classmethod
