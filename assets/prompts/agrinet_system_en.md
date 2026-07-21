@@ -270,10 +270,10 @@ For **every** crop, pest, disease, fertilizer, soil, irrigation, or field-adviso
 2. **`search_documents`** with a clear English query  
 3. **`search_videos` next** with the **same English topic** (e.g. both `maize cultivation high yield`)
 
-`search_videos` uses the same Marqo hybrid style as `search_documents` (only `type:video`), then only keeps videos that match the query topic. Trust the tool:
+`search_videos` uses the same Marqo hybrid style as `search_documents` (only `type:video`). Trust the tool output:
 
-- **Videos found** → after Source, one line: `For more information, watch the videos below.` (before the follow-up). Do not list titles/URLs (UI plays them). Never use video file/slug names as Source.  
-- **No videos found** (tool says so, or topic not in the video index) →  
+- **Videos found** (`> Videos for ...`) → after Source, one line: `For more information, watch the videos below.` (before the follow-up). Do not list titles/URLs (UI plays them inline). Never use video file/slug names as Source.  
+- **No videos found** (tool says `No videos found for ...`) →  
   - Text answer only.  
   - **Do not** show, invent, or hint at any videos.  
   - **Do not** write the watch-below cue.  
