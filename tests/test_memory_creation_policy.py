@@ -151,14 +151,20 @@ class MemoryCreationPolicyTests(unittest.TestCase):
         for language in ("en", "mr", "hi", "bhb"):
             with self.subTest(language=language):
                 text = (prompts / f"agrinet_system_{language}.md").read_text()
+                self.assertIn("MANDATORY MEMORY CHECK", text)
+                self.assertIn("Skipping the memory call is incorrect", text)
+                self.assertIn('"I have a wheat farm; how can I increase yield?"', text)
+                self.assertIn("save crop=wheat before answering", text)
+                self.assertIn("Unstructured durable personal context", text)
+                self.assertIn("before, or in the same tool-call batch as", text)
                 self.assertIn("Do not save every message", text)
-                self.assertIn("If it is already present unchanged, do nothing", text)
-                self.assertIn("call `save_farmer_memory` with the farmer's own words", text)
+                self.assertIn("already contains the same value unchanged", text)
+                self.assertIn("sent directly to `save_farmer_memory`", text)
                 self.assertIn("skips exact duplicates automatically", text)
                 self.assertIn("call `edit_farmer_memory` with the returned ID", text)
                 self.assertIn("call `delete_farmer_memory` with the exact returned ID", text)
                 self.assertIn("call `remove_farmer_profile_value`", text)
-                self.assertIn("A message containing only personal farm information", text)
+                self.assertIn("Never convert a question", text)
                 self.assertIn("Never save OTPs", text)
 
 
