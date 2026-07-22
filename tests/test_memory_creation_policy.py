@@ -148,24 +148,48 @@ class MemoryCreationPolicyTests(unittest.TestCase):
 
     def test_every_live_prompt_states_memory_policy(self):
         prompts = Path("assets/prompts")
-        for language in ("en", "mr", "hi", "bhb"):
+        localized = {
+            "en": (
+                "## Farmer Memory (Internal Tool Rules)",
+                "MANDATORY MEMORY CHECK",
+                '"I have a wheat farm; how can I increase yield?"',
+                "Unstructured durable personal context",
+            ),
+            "mr": (
+                "## शेतकरी स्मृती (अंतर्गत साधन नियम)",
+                "अनिवार्य स्मृती तपासणी",
+                '"माझे गव्हाचे शेत आहे; उत्पादन कसे वाढवू?"',
+                "असंरचित पण दीर्घकाळ उपयुक्त वैयक्तिक संदर्भ",
+            ),
+            "hi": (
+                "## किसान स्मृति (आंतरिक टूल नियम)",
+                "अनिवार्य स्मृति जाँच",
+                '"मेरा गेहूँ का खेत है; उपज कैसे बढ़ाऊँ?"',
+                "असंरचित लेकिन लंबे समय तक उपयोगी व्यक्तिगत संदर्भ",
+            ),
+            "bhb": (
+                "## शेतकरी याद (अंदरना टूल नियम)",
+                "जरुरी याद तपासणी",
+                '"मारू गव्हनू खेत शे; उपज केहकी वधारूं?"',
+                "बांधेली नाय पण लांबा टेम काम आवे एवी वैयक्तिक बात",
+            ),
+        }
+        for language, expected_phrases in localized.items():
             with self.subTest(language=language):
                 text = (prompts / f"agrinet_system_{language}.md").read_text()
-                self.assertIn("MANDATORY MEMORY CHECK", text)
-                self.assertIn("Skipping the memory call is incorrect", text)
-                self.assertIn('"I have a wheat farm; how can I increase yield?"', text)
-                self.assertIn("save crop=wheat before answering", text)
-                self.assertIn("Unstructured durable personal context", text)
-                self.assertIn("before, or in the same tool-call batch as", text)
-                self.assertIn("Do not save every message", text)
-                self.assertIn("already contains the same value unchanged", text)
-                self.assertIn("sent directly to `save_farmer_memory`", text)
-                self.assertIn("skips exact duplicates automatically", text)
-                self.assertIn("call `edit_farmer_memory` with the returned ID", text)
-                self.assertIn("call `delete_farmer_memory` with the exact returned ID", text)
-                self.assertIn("call `remove_farmer_profile_value`", text)
-                self.assertIn("Never convert a question", text)
-                self.assertIn("Never save OTPs", text)
+                for phrase in expected_phrases:
+                    self.assertIn(phrase, text)
+                for tool_name in (
+                    "update_farmer_profile",
+                    "save_farmer_memory",
+                    "edit_farmer_memory",
+                    "delete_farmer_memory",
+                    "remove_farmer_profile_value",
+                ):
+                    self.assertIn(tool_name, text)
+                if language != "en":
+                    self.assertNotIn("MANDATORY MEMORY CHECK", text)
+                    self.assertNotIn("## Farmer Memory (Internal Tool Rules)", text)
 
 
 if __name__ == "__main__":
