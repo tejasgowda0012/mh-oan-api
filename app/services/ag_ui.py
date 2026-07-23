@@ -4,11 +4,13 @@ AG-UI event streaming adapter.
 Emits SSE events compatible with the AG-UI protocol shape so clients can:
   - stream assistant text
   - render structured related videos inline (same search_videos tool, no second tool)
+  - render retrieved documents for grounding validation (from search_documents)
 
 Event types used:
   RUN_STARTED, TEXT_MESSAGE_START, TEXT_MESSAGE_CONTENT, TEXT_MESSAGE_END,
   TOOL_CALL_START, TOOL_CALL_ARGS, TOOL_CALL_END, TOOL_CALL_RESULT,
-  CUSTOM (name=related_videos), RUN_FINISHED, RUN_ERROR
+  CUSTOM (name=related_videos), CUSTOM (name=related_documents),
+  RUN_FINISHED, RUN_ERROR
 """
 
 from __future__ import annotations
@@ -34,18 +36,20 @@ async def stream_ag_ui_events(
     user_id: str,
     query: str,
     related_videos: Optional[list[dict[str, Any]]] = None,
+    related_documents: Optional[list[dict[str, Any]]] = None,
     run_id: Optional[str] = None,
 ) -> AsyncGenerator[str, None]:
     """
     Adapt a text chunk stream into AG-UI SSE events.
 
-    `related_videos` may be filled asynchronously while `chunk_source` runs
-    (e.g. a shared list mutated by the chat service). It is read after the
-    text stream completes.
+    `related_videos` and `related_documents` may be filled asynchronously while
+    `chunk_source` runs (e.g. shared lists mutated by the chat service). They are
+    read after the text stream completes.
     """
     run_id = run_id or str(uuid.uuid4())
     message_id = f"msg_{uuid.uuid4().hex[:16]}"
     videos_holder = related_videos if related_videos is not None else []
+    documents_holder = related_documents if related_documents is not None else []
     accumulated = ""
 
     yield format_sse(
@@ -104,6 +108,14 @@ async def stream_ag_ui_events(
         ):
             yield event
 
+    documents = list(documents_holder or [])
+    if documents:
+        async for event in _emit_related_documents(
+            documents=documents,
+            message_id=message_id,
+        ):
+            yield event
+
     yield format_sse(
         {
             "type": "RUN_FINISHED",
@@ -112,6 +124,7 @@ async def stream_ag_ui_events(
             "result": {
                 "text": accumulated,
                 "video_count": len(videos),
+                "document_count": len(documents),
             },
         }
     )
@@ -163,5 +176,55 @@ async def _emit_related_videos(
             "type": "CUSTOM",
             "name": "related_videos",
             "value": {"videos": videos},
+        }
+    )
+
+
+async def _emit_related_documents(
+    *,
+    documents: list[dict[str, Any]],
+    message_id: str,
+) -> AsyncGenerator[str, None]:
+    """Emit tool-call lifecycle + CUSTOM related_documents for grounding validation."""
+    tool_call_id = _tool_call_id()
+    tool_name = "search_documents"
+    args_json = json.dumps({"documents": documents}, ensure_ascii=False)
+
+    yield format_sse(
+        {
+            "type": "TOOL_CALL_START",
+            "toolCallId": tool_call_id,
+            "toolCallName": tool_name,
+            "parentMessageId": message_id,
+        }
+    )
+    yield format_sse(
+        {
+            "type": "TOOL_CALL_ARGS",
+            "toolCallId": tool_call_id,
+            "delta": args_json,
+        }
+    )
+    yield format_sse(
+        {
+            "type": "TOOL_CALL_END",
+            "toolCallId": tool_call_id,
+        }
+    )
+    yield format_sse(
+        {
+            "type": "TOOL_CALL_RESULT",
+            "messageId": message_id,
+            "toolCallId": tool_call_id,
+            "content": args_json,
+            "role": "tool",
+        }
+    )
+    # Convenience event for clients that bind document cards to a custom name.
+    yield format_sse(
+        {
+            "type": "CUSTOM",
+            "name": "related_documents",
+            "value": {"documents": documents},
         }
     )

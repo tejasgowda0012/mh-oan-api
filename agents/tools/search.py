@@ -17,6 +17,11 @@ from agents.tools.video_payload import (
     is_http_url,
     video_resource_from_hit,
 )
+from agents.tools.document_payload import (
+    DocumentResource,
+    dedupe_documents,
+    document_resource_from_hit,
+)
 from langfuse import observe
 
 logger = get_logger(__name__)
@@ -25,6 +30,9 @@ DocumentType = Literal['video', 'document']
 
 # Max videos attached to AG-UI for inline playback (agent still sees full top_k).
 AGUI_VIDEO_LIMIT = 2
+
+# Max documents attached to AG-UI for grounding validation (agent still sees full top_k).
+AGUI_DOCUMENT_LIMIT = 10
 
 
 class SearchHit(BaseModel):
@@ -78,6 +86,16 @@ class SearchHit(BaseModel):
             source=None,
         )
 
+    def to_document_resource(self) -> DocumentResource:
+        """Structured card for AG-UI grounding validation (carries full text)."""
+        return document_resource_from_hit(
+            doc_id=self.doc_id or self.id,
+            title=self.name,
+            source=self.citation_source,
+            text=self.processed_text,
+            score=self.score,
+        )
+
     def __str__(self) -> str:
         body = "```\n" + self.processed_text + "\n```\n"
         lines = [f"**{self.name}**"]
@@ -106,6 +124,15 @@ def collect_video_resources(hits: list[SearchHit], limit: int = AGUI_VIDEO_LIMIT
         if resource:
             resources.append(resource)
     return dedupe_videos(resources)[:limit]
+
+
+def collect_document_resources(hits: list[SearchHit], limit: int = AGUI_DOCUMENT_LIMIT) -> list[DocumentResource]:
+    """
+    AG-UI validation payloads from Marqo document hits.
+    Dedupes by doc id so one document is not shown many times from chunk rows.
+    """
+    resources = [hit.to_document_resource() for hit in hits]
+    return dedupe_documents(resources)[:limit]
 
 
 def _marqo_hybrid_search(
@@ -176,6 +203,18 @@ async def search_documents(
 
         lang_code = ctx.deps.lang_code
         search_hits = [SearchHit(**hit, lang_code=lang_code) for hit in results]
+
+        # AG-UI: store the retrieved documents for grounding validation (Marqo order,
+        # deduped by doc id). The agent still receives the full text below.
+        resources = collect_document_resources(search_hits, limit=AGUI_DOCUMENT_LIMIT)
+        if resources:
+            ctx.deps.add_related_documents([r.to_ag_ui_dict() for r in resources])
+            logger.info(
+                "search_documents AG-UI documents=%s session=%s",
+                [r.title for r in resources],
+                getattr(ctx.deps, "session_id", ""),
+            )
+
         document_string = "\n\n----\n\n".join(str(document) for document in search_hits)
         return "> Search Results for `" + query + "`\n\n" + document_string
     except Exception as e:
