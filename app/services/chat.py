@@ -132,13 +132,16 @@ async def stream_chat_messages(
             lf_set_trace_io(input=query)
 
             # ------------------------------------------------------------------
-            # Bhili: translate query → English before processing
+            # Bhili: NMT layer removed — the model now handles Bhili directly,
+            # so Bhili follows the same path as every other language (no query
+            # pre-translation, target_lang stays "bhb").
             # ------------------------------------------------------------------
-            is_bhili = source_lang == "bhb"
-            if is_bhili:
-                query = await translation_service.translate_text(query, source_lang, "en")
-                logger.info(f"Bhili query translated to English: {query}")
-                target_lang = "en"
+            is_bhili = False
+            # is_bhili = source_lang == "bhb"
+            # if is_bhili:
+            #     query = await translation_service.translate_text(query, source_lang, "en")
+            #     logger.info(f"Bhili query translated to English: {query}")
+            #     target_lang = "en"
 
             deps = FarmerContext(
                 query=query,
@@ -216,6 +219,7 @@ async def stream_chat_messages(
                         len(deps.related_videos),
                         session_id,
                     )
+
 
                 if moderation_data.category == "valid_agricultural":
                     logger.info(f"Triggering suggestions generation for session {session_id}")
@@ -318,26 +322,28 @@ async def _run_agrinet_stream(
                 deps=deps,
             ) as response_stream:
 
-                if is_bhili:
-                    # Buffer paragraph-by-paragraph so Bhashini receives complete
-                    # sentences, then translate each paragraph before yielding.
-                    buffer = ""
-                    async for chunk in response_stream.stream_text(delta=True):
-                        buffer += chunk
-                        while "\n\n" in buffer:
-                            paragraph, buffer = buffer.split("\n\n", 1)
-                            translated = await _translate_paragraph(paragraph, "en", "bhb")
-                            full_output += translated + "\n\n"
-                            yield translated + "\n\n"
-                    # Flush remaining tail (no trailing double-newline)
-                    if buffer.strip():
-                        translated_tail = await _translate_paragraph(buffer, "en", "bhb")
-                        full_output += translated_tail
-                        yield translated_tail
-                else:
-                    async for chunk in response_stream.stream_text(delta=True):
-                        full_output += chunk
-                        yield chunk
+                # Bhili NMT layer removed — the model streams Bhili directly, so
+                # the response is yielded as-is like every other language.
+                # if is_bhili:
+                #     # Buffer paragraph-by-paragraph so Bhashini receives complete
+                #     # sentences, then translate each paragraph before yielding.
+                #     buffer = ""
+                #     async for chunk in response_stream.stream_text(delta=True):
+                #         buffer += chunk
+                #         while "\n\n" in buffer:
+                #             paragraph, buffer = buffer.split("\n\n", 1)
+                #             translated = await _translate_paragraph(paragraph, "en", "bhb")
+                #             full_output += translated + "\n\n"
+                #             yield translated + "\n\n"
+                #     # Flush remaining tail (no trailing double-newline)
+                #     if buffer.strip():
+                #         translated_tail = await _translate_paragraph(buffer, "en", "bhb")
+                #         full_output += translated_tail
+                #         yield translated_tail
+                # else:
+                async for chunk in response_stream.stream_text(delta=True):
+                    full_output += chunk
+                    yield chunk
 
                 logger.info(f"Streaming complete for session {session_id}")
                 new_messages = response_stream.new_messages()
