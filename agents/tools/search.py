@@ -19,8 +19,7 @@ from agents.tools.video_payload import (
 )
 from agents.tools.document_payload import (
     DocumentResource,
-    dedupe_documents,
-    document_resource_from_hit,
+    chunk_resource_from_hit,
 )
 from langfuse import observe
 
@@ -31,8 +30,10 @@ DocumentType = Literal['video', 'document']
 # Max videos attached to AG-UI for inline playback (agent still sees full top_k).
 AGUI_VIDEO_LIMIT = 2
 
-# Max documents attached to AG-UI for grounding validation (agent still sees full top_k).
+# Max documents (grouped by doc_id) attached to AG-UI for grounding validation
+# (agent still sees full top_k). Chunks per document are capped separately.
 AGUI_DOCUMENT_LIMIT = 10
+AGUI_CHUNK_LIMIT = 5
 
 
 class SearchHit(BaseModel):
@@ -86,16 +87,6 @@ class SearchHit(BaseModel):
             source=None,
         )
 
-    def to_document_resource(self) -> DocumentResource:
-        """Structured card for AG-UI grounding validation (carries full text)."""
-        return document_resource_from_hit(
-            doc_id=self.doc_id or self.id,
-            title=self.name,
-            source=self.citation_source,
-            text=self.processed_text,
-            score=self.score,
-        )
-
     def __str__(self) -> str:
         body = "```\n" + self.processed_text + "\n```\n"
         lines = [f"**{self.name}**"]
@@ -126,13 +117,40 @@ def collect_video_resources(hits: list[SearchHit], limit: int = AGUI_VIDEO_LIMIT
     return dedupe_videos(resources)[:limit]
 
 
-def collect_document_resources(hits: list[SearchHit], limit: int = AGUI_DOCUMENT_LIMIT) -> list[DocumentResource]:
+def collect_document_resources(
+    hits: list[SearchHit],
+    doc_limit: int = AGUI_DOCUMENT_LIMIT,
+    chunk_limit: int = AGUI_CHUNK_LIMIT,
+) -> list[DocumentResource]:
     """
-    AG-UI validation payloads from Marqo document hits.
-    Dedupes by doc id so one document is not shown many times from chunk rows.
+    Group Marqo document hits into documents, each carrying its retrieved chunks.
+
+    One document (doc_id) may come back as several chunk rows; those are grouped
+    under a single DocumentResource so a reviewer can see the exact passages the
+    model received. Marqo relevance order is preserved; documents and chunks are
+    capped independently. Each document's ``score`` is its best chunk score.
     """
-    resources = [hit.to_document_resource() for hit in hits]
-    return dedupe_documents(resources)[:limit]
+    docs: dict[str, DocumentResource] = {}
+    for hit in hits:
+        key = hit.doc_id or hit.id
+        if key not in docs:
+            if len(docs) >= doc_limit:
+                continue  # document cap reached; skip new documents (keep top ones)
+            docs[key] = DocumentResource(
+                id=key,
+                title=(hit.name or "Document").strip(),
+                source=hit.citation_source,
+                chunks=[],
+                score=None,
+            )
+        doc = docs[key]
+        if len(doc.chunks) < chunk_limit:
+            doc.chunks.append(
+                chunk_resource_from_hit(chunk_id=hit.id, text=hit.processed_text, score=hit.score)
+            )
+        if hit.score is not None and (doc.score is None or hit.score > doc.score):
+            doc.score = round(hit.score, 4)
+    return list(docs.values())
 
 
 def _marqo_hybrid_search(
@@ -204,14 +222,18 @@ async def search_documents(
         lang_code = ctx.deps.lang_code
         search_hits = [SearchHit(**hit, lang_code=lang_code) for hit in results]
 
-        # AG-UI: store the retrieved documents for grounding validation (Marqo order,
-        # deduped by doc id). The agent still receives the full text below.
-        resources = collect_document_resources(search_hits, limit=AGUI_DOCUMENT_LIMIT)
+        # AG-UI: store the retrieved documents (grouped by doc_id, each carrying its
+        # retrieved chunks) for grounding validation. The agent still receives the
+        # full text below.
+        resources = collect_document_resources(
+            search_hits, doc_limit=AGUI_DOCUMENT_LIMIT, chunk_limit=AGUI_CHUNK_LIMIT
+        )
         if resources:
             ctx.deps.add_related_documents([r.to_ag_ui_dict() for r in resources])
             logger.info(
-                "search_documents AG-UI documents=%s session=%s",
+                "search_documents AG-UI documents=%s chunks=%s session=%s",
                 [r.title for r in resources],
+                [len(r.chunks) for r in resources],
                 getattr(ctx.deps, "session_id", ""),
             )
 
