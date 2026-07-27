@@ -118,6 +118,28 @@ class DBTApplication(BaseModel):
     def _activity_name(self) -> str:
         return self._get_tag_value("activity_name") or str(self.descriptor).split(" - ")[0]
 
+    def _title(self) -> str:
+        """Title as activity_name (unit_name), matching the POCRA DBT portal."""
+        activity_name = self._activity_name()
+        unit_name = self._get_tag_value("unit_name")
+        if unit_name:
+            return f"{activity_name} ({unit_name})"
+        return activity_name
+
+    def _village_display(self) -> Optional[str]:
+        village_name = self._get_tag_value("village_name")
+        village_code = self._get_tag_value("village_code")
+        if village_name and village_code:
+            return f"{village_name} ({village_code})"
+        return village_name or village_code
+
+    def _unit_size_display(self) -> Optional[str]:
+        unit_size = self._get_tag_value("unit_size")
+        unit_size_type = self._get_tag_value("unit_size_type")
+        if unit_size and unit_size_type:
+            return f"{unit_size} {unit_size_type}"
+        return unit_size or unit_size_type
+
     def _format_amount(self, value: str) -> str:
         clean = value.strip()
         if not clean or clean in {"null", "NA"}:
@@ -130,30 +152,39 @@ class DBTApplication(BaseModel):
         except ValueError:
             return clean
 
-    def to_summary_card(self, index: int, mask_pii: bool = True) -> str:
-        """Numbered card with GFM sub-bullets for the all-applications list view."""
-        activity_name = self._activity_name()
-        status = self._get_tag_value("application_status")
-        stage = self._get_tag_value("application_stage")
-        village = self._get_tag_value("village_name")
+    def _status_content_bullets(self, mask_pii: bool = True) -> list[str]:
+        """Shared content bullets for list and single-application views."""
         app_id = self._get_tag_value("application_id") or self.id
         masked_app_id = self._format_tag_value("application_id", app_id, mask_pii)
+        status = self._get_tag_value("application_status")
+        unit_size = self._unit_size_display()
+        village = self._village_display()
+        stage = self._get_tag_value("application_stage")
         app_date = self._get_tag_value("application_date")
         amount = self._get_tag_value("presanctionamount")
+        survey_no = self._get_tag_value("survey_no")
 
-        lines = [f"**{index}. {activity_name}**"]
         bullets: list[str] = [f"- Application ID: {masked_app_id}"]
         if status:
             bullets.append(f"- Status: {self.format_status_display(status)}")
-        if stage:
-            bullets.append(f"- Stage: {self.format_stage_display(stage)}")
+        if unit_size:
+            bullets.append(f"- Unit size: {unit_size}")
         if village:
             bullets.append(f"- Village: {village}")
+        if stage:
+            bullets.append(f"- Stage: {self.format_stage_display(stage)}")
         if app_date:
             bullets.append(f"- Applied on: {self._format_date(app_date)}")
         if amount:
             bullets.append(f"- Pre-sanction amount: {self._format_amount(amount)}")
-        lines.extend(bullets)
+        if survey_no:
+            bullets.append(f"- Survey No: {survey_no}")
+        return bullets
+
+    def to_summary_card(self, index: int, mask_pii: bool = True) -> str:
+        """Numbered card with GFM sub-bullets for the all-applications list view."""
+        lines = [f"**{index}. {self._title()}**"]
+        lines.extend(self._status_content_bullets(mask_pii=mask_pii))
         return "\n".join(lines)
 
     def matches_application_id(self, application_id: str) -> bool:
@@ -164,48 +195,9 @@ class DBTApplication(BaseModel):
         return tag_app_id == normalized
 
     def to_detail_block(self, mask_pii: bool = True) -> str:
-        """Structured detail block for a single application."""
-        activity_name = self._activity_name()
-        status = self._get_tag_value("application_status")
-        stage = self._get_tag_value("application_stage")
-
-        lines = [f"**{activity_name}**", ""]
-        bullets: list[str] = []
-        if status:
-            bullets.append(f"- Status: {self.format_status_display(status)}")
-        if stage:
-            bullets.append(f"- Stage: {self.format_stage_display(stage)}")
-
-        priority_info = [
-            ("full_name", "Applicant Name"),
-            ("application_id", "Application ID"),
-            ("application_date", "Application Date"),
-            ("village_name", "Village"),
-            ("survey_no", "Survey No"),
-            ("activity_group_name", "Activity Group Name"),
-            ("unit_name", "Unit"),
-            ("area_applied", "Area Applied (ha)"),
-            ("area_as_per_farmer_id", "Area As Per Farmer ID (ha)"),
-            ("presanctionamount", "Pre-sanction Amount"),
-            ("remark", "Remark"),
-            ("reasons_text", "Reason"),
-            ("last_updated_on", "Last Updated"),
-            ("is_maha_dbt_application", "MahaDBT Application"),
-        ]
-
-        for code, label in priority_info:
-            value = self._get_tag_value(code)
-            if value is None:
-                continue
-            if code.endswith(("_date", "_on")):
-                value = self._format_date(value)
-            elif code == "presanctionamount":
-                value = self._format_amount(value)
-            else:
-                value = self._format_tag_value(code, value, mask_pii)
-            bullets.append(f"- {label}: {value}")
-
-        lines.extend(bullets)
+        """Structured detail block for a single application (same fields as list)."""
+        lines = [f"**{self._title()}**", ""]
+        lines.extend(self._status_content_bullets(mask_pii=mask_pii))
         return "\n".join(lines)
 
     def __str__(self, mask_pii: bool = True) -> str:
