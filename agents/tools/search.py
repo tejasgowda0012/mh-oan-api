@@ -32,8 +32,8 @@ AGUI_VIDEO_LIMIT = 2
 
 # Max documents (grouped by doc_id) attached to AG-UI for grounding validation
 # (agent still sees full top_k). Chunks per document are capped separately.
-AGUI_DOCUMENT_LIMIT = 10
-AGUI_CHUNK_LIMIT = 5
+AGUI_DOCUMENT_LIMIT = 3
+AGUI_CHUNK_LIMIT = 3
 
 
 class SearchHit(BaseModel):
