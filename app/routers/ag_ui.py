@@ -33,6 +33,8 @@ async def ag_ui_chat_endpoint(
 
     When `search_videos` runs during the turn, structured video resources are
     emitted as TOOL_CALL_* / CUSTOM related_videos events for inline players.
+    When `search_documents` runs, the retrieved documents are emitted as
+    TOOL_CALL_* / CUSTOM related_documents events for grounding validation.
     """
     session_id = chat_request.session_id or str(uuid.uuid4())
 
@@ -54,8 +56,9 @@ async def ag_ui_chat_endpoint(
         except Exception:
             pass
 
-    # Shared list filled by stream_chat_messages while the agent runs.
+    # Shared lists filled by stream_chat_messages while the agent runs.
     related_videos: list = []
+    related_documents: list = []
 
     async def text_chunks():
         async for chunk in stream_chat_messages(
@@ -68,6 +71,7 @@ async def ag_ui_chat_endpoint(
             user_info=user_info,
             background_tasks=background_tasks,
             related_videos_out=related_videos,
+            related_documents_out=related_documents,
         ):
             yield chunk
 
@@ -78,6 +82,7 @@ async def ag_ui_chat_endpoint(
             user_id=chat_request.user_id,
             query=chat_request.query,
             related_videos=related_videos,
+            related_documents=related_documents,
         ),
         media_type="text/event-stream",
     )

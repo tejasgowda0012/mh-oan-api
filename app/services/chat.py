@@ -82,6 +82,7 @@ async def stream_chat_messages(
     user_info: dict,
     background_tasks: BackgroundTasks,
     related_videos_out: list | None = None,
+    related_documents_out: list | None = None,
 ) -> AsyncGenerator[str, None]:
     """Async generator for streaming chat messages with full Langfuse tracing.
 
@@ -93,6 +94,10 @@ async def stream_chat_messages(
             video resources collected by ``search_videos`` during this turn are
             appended for AG-UI clients (inline playback). Classic ``/chat``
             callers omit this and keep text-only SSE.
+        related_documents_out: Optional mutable list. When provided, structured
+            document resources retrieved by ``search_documents`` during this turn
+            are appended for AG-UI clients (grounding validation). Classic
+            ``/chat`` callers omit this.
     """
     user_claims = user_info if isinstance(user_info, dict) else {}
     memory_user_id = resolve_memory_user_id(user_id, user_claims)
@@ -214,6 +219,15 @@ async def stream_chat_messages(
                     logger.info(
                         "AG-UI related_videos_out=%s session=%s",
                         len(deps.related_videos),
+                        session_id,
+                    )
+
+                # Expose retrieved documents for AG-UI grounding validation.
+                if related_documents_out is not None and deps.related_documents:
+                    related_documents_out.extend(deps.related_documents)
+                    logger.info(
+                        "AG-UI related_documents_out=%s session=%s",
+                        len(deps.related_documents),
                         session_id,
                     )
 

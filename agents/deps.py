@@ -41,6 +41,11 @@ class FarmerContext(BaseModel):
         default_factory=list,
         description="Structured video resources collected during this turn for AG-UI playback.",
     )
+    # Populated by search_documents for AG-UI grounding-validation cards (not part of the LLM prompt).
+    related_documents: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Structured document resources retrieved this turn, for AG-UI grounding validation.",
+    )
 
     def add_related_videos(self, videos: List[Dict[str, Any]]) -> None:
         """Append unique structured videos for AG-UI clients."""
@@ -54,6 +59,19 @@ class FarmerContext(BaseModel):
             if key:
                 seen.add(key)
             self.related_videos.append(video)
+
+    def add_related_documents(self, documents: List[Dict[str, Any]]) -> None:
+        """Append unique structured document cards for AG-UI validation clients."""
+        if not documents:
+            return
+        seen = {d.get("id") or d.get("title") for d in self.related_documents}
+        for document in documents:
+            key = document.get("id") or document.get("title")
+            if key and key in seen:
+                continue
+            if key:
+                seen.add(key)
+            self.related_documents.append(document)
 
     @field_validator("farmer_id", "unique_id", "memory_user_id", mode="before")
     @classmethod
