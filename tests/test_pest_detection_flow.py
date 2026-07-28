@@ -68,6 +68,7 @@ class UploadValidationTests(unittest.IsolatedAsyncioTestCase):
         with (
             tempfile.TemporaryDirectory() as upload_dir,
             patch.object(upload_router, "get_upload_dir", return_value=Path(upload_dir)),
+            patch.object(upload_router, "schedule_pest_upload_file_deletion") as schedule_deletion,
             patch.object(upload_router, "set_cache", new=AsyncMock()),
         ):
             record = await upload_router.save_pest_upload(
@@ -77,6 +78,16 @@ class UploadValidationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(record["crop_id"], "25")
         self.assertTrue(record["upload_id"].startswith("pest_"))
         self.assertIn("/api/upload/", record["image_url"])
+        schedule_deletion.assert_called_once_with(Path(record["image_path"]))
+
+    async def test_image_deletion_timer_removes_the_file(self):
+        with tempfile.TemporaryDirectory() as upload_dir:
+            image_path = Path(upload_dir) / "pest_test.jpg"
+            image_path.write_bytes(b"crop-image")
+
+            await upload_router._delete_pest_upload_file_after_delay(image_path, 0)
+
+            self.assertFalse(image_path.exists())
 
     async def test_rejects_spoofed_image_and_recent_sowing_date(self):
         class Upload:

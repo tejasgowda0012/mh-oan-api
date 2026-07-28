@@ -51,6 +51,8 @@ class Settings(BaseSettings):
     default_cache_ttl: int = 60 * 60 * 24  # 24 hours
     suggestions_cache_ttl: int = 60 * 30    # 30 minutes
     pest_upload_cache_ttl: int = 60 * 60 * 24  # 24 hours
+    pest_upload_image_ttl: int = 60 * 60  # 1 hour; image bytes are more sensitive than metadata
+    pest_upload_cleanup_interval: int = 60  # seconds
     pest_detection_http_timeout: float = 60.0
 
     # Logging Configuration

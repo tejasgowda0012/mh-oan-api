@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -66,6 +67,48 @@ def get_upload_dir() -> Path:
     return upload_dir
 
 
+async def _delete_pest_upload_file_after_delay(
+    image_path: Path, delay_seconds: int | None = None
+) -> None:
+    """Delete an upload image after its strict one-hour retention period."""
+    await asyncio.sleep(
+        settings.pest_upload_image_ttl if delay_seconds is None else delay_seconds
+    )
+    try:
+        await asyncio.to_thread(image_path.unlink, missing_ok=True)
+    except OSError:
+        logger.exception("Unable to delete expired pest upload image %s", image_path.name)
+
+
+def schedule_pest_upload_file_deletion(image_path: Path) -> None:
+    """Start the per-upload deletion timer without delaying the HTTP response."""
+    asyncio.create_task(_delete_pest_upload_file_after_delay(image_path))
+
+
+async def purge_expired_pest_upload_files() -> int:
+    """Remove expired files left behind by a restart before a timer could fire."""
+    upload_dir = get_upload_dir()
+    cutoff = datetime.now(timezone.utc).timestamp() - settings.pest_upload_image_ttl
+    removed = 0
+    for image_path in upload_dir.iterdir():
+        if not image_path.is_file():
+            continue
+        try:
+            if image_path.stat().st_mtime <= cutoff:
+                await asyncio.to_thread(image_path.unlink, missing_ok=True)
+                removed += 1
+        except OSError:
+            logger.exception("Unable to prune pest upload image %s", image_path.name)
+    return removed
+
+
+async def run_pest_upload_cleanup_loop() -> None:
+    """Periodically remove files whose process-local deletion task was interrupted."""
+    while True:
+        await asyncio.sleep(settings.pest_upload_cleanup_interval)
+        await purge_expired_pest_upload_files()
+
+
 def _upload_cache_key(upload_id: str) -> str:
     return f"{UPLOAD_KEY_PREFIX}{upload_id}"
 
@@ -117,6 +160,7 @@ async def save_pest_upload(
 
     async with aiofiles.open(image_path, "wb") as file_handle:
         await file_handle.write(image_bytes)
+    schedule_pest_upload_file_deletion(image_path)
 
     image_url = build_upload_image_url(base_url, upload_id) if base_url else None
 
@@ -183,8 +227,8 @@ async def upload_pest_detection_image(
     """
     Upload a crop image and metadata for later pest and disease analysis in chat.
 
-    Saves the image under temp/pest_detection, stores crop details and image URL in Redis,
-    and returns an id (upload_id) plus the public image URL.
+    Saves the image under temp/pest_detection for at most one hour, stores crop
+    details in Redis for 24 hours, and returns an id plus the image URL.
     """
     try:
         record = await save_pest_upload(

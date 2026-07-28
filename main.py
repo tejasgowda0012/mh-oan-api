@@ -2,7 +2,8 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
 
 load_dotenv()
 
@@ -12,14 +13,22 @@ from app.routers import chat, health, pest_detection, suggestions, transcribe, t
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan events for startup and shutdown"""
-    # Startup
+    removed_uploads = await upload.purge_expired_pest_upload_files()
+    if removed_uploads:
+        print(f"🧹 Removed {removed_uploads} expired pest upload image(s)")
+    upload_cleanup_task = asyncio.create_task(upload.run_pest_upload_cleanup_loop())
+
     print(f"🚀 {settings.app_name} starting up...")
     print(f"📍 Environment: {settings.environment}")
     print(f"🔧 Debug mode: {settings.debug}")
     print(f"🌐 CORS origins: {settings.allowed_origins}")
-    yield
-    # Shutdown
-    print(f"🛑 {settings.app_name} shutting down...")
+    try:
+        yield
+    finally:
+        upload_cleanup_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await upload_cleanup_task
+        print(f"🛑 {settings.app_name} shutting down...")
 
 # Create FastAPI app with settings
 app = FastAPI(
