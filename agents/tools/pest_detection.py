@@ -185,13 +185,32 @@ async def _authenticate_pest_service_with_identity(
     candidates = _get_pest_login_uid_candidates(ctx)
     for candidate_index, uid in enumerate(candidates, start=1):
         encrypted_uid = _encrypt_uid(uid)
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(
-                os.getenv("PEST_LOGIN_URL", DEFAULT_PEST_AUTH_URL),
-                headers={"uid": encrypted_uid},
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.post(
+                    os.getenv("PEST_LOGIN_URL", DEFAULT_PEST_AUTH_URL),
+                    headers={"uid": encrypted_uid},
+                )
+                response.raise_for_status()
+                payload = response.json() if response.content else {}
+        except httpx.HTTPStatusError as exc:
+            # An unknown farmer registration can be rejected with either a
+            # successful HTTP response containing "Invalid request" or a 4xx.
+            # In both cases, continue to the configured guest candidate.
+            logger.warning(
+                "Pest detection login rejected uid candidate %s with status %s",
+                candidate_index,
+                exc.response.status_code,
             )
-            response.raise_for_status()
-            payload = response.json() if response.content else {}
+            last_payload = {"status_code": exc.response.status_code}
+            continue
+        except (ValueError, json.JSONDecodeError):
+            logger.warning(
+                "Pest detection login returned invalid JSON for uid candidate %s",
+                candidate_index,
+            )
+            last_payload = {"error": "invalid_json"}
+            continue
 
         access_token = _extract_first_value(
             payload,
@@ -420,7 +439,10 @@ async def _post_multipart_predict(
         response = await client.post(url, headers=auth_headers, data=data, files=files)
         response.raise_for_status()
         if response.content:
-            return response.json()
+            payload = response.json()
+            if not isinstance(payload, dict):
+                raise ValueError("Pest prediction API returned a non-object response")
+            return payload
         return {}
 
 
@@ -434,7 +456,12 @@ async def _post_crop_pd_advisory(
         response = await client.post(url, headers=auth_headers, data={"pd_id": pd_id})
         response.raise_for_status()
         if response.content:
-            return response.json()
+            payload = response.json()
+            if isinstance(payload, list):
+                return {"data": payload}
+            if not isinstance(payload, dict):
+                raise ValueError("Pest advisory API returned a non-object response")
+            return payload
         return {}
 
 
@@ -468,7 +495,10 @@ async def _post_store_response(
         response = await client.post(url, headers=auth_headers, data=data, files=files)
         response.raise_for_status()
         if response.content:
-            return response.json()
+            payload = response.json()
+            if not isinstance(payload, dict):
+                raise ValueError("Pest store-response API returned a non-object response")
+            return payload
         return {}
 
 async def run_pest_detection_analysis(ctx: RunContext[FarmerContext], upload_id: str) -> str:
@@ -517,7 +547,7 @@ async def run_pest_detection_analysis(ctx: RunContext[FarmerContext], upload_id:
             exc_info=True,
         )
         return f"Pest detection prediction failed: {exc}"
-    except httpx.HTTPError as exc:
+    except (httpx.HTTPError, ValueError) as exc:
         logger.exception("Pest detection predict API request failed for %s", upload_id)
         return f"Pest detection prediction failed: {exc}"
 
@@ -538,7 +568,7 @@ async def run_pest_detection_analysis(ctx: RunContext[FarmerContext], upload_id:
             predict_pd_id,
             auth_headers,
         )
-    except httpx.HTTPError as exc:
+    except (httpx.HTTPError, ValueError) as exc:
         logger.exception("Pest detection advisory API failed for %s", upload_id)
         return (
             f"Disease prediction completed, but advisory lookup failed: {exc}\n\n"
@@ -549,8 +579,10 @@ async def run_pest_detection_analysis(ctx: RunContext[FarmerContext], upload_id:
 
     store_pd_id = _extract_pd_id(advisory_response) or predict_pd_id
 
+    stored_response: Dict[str, Any] = {}
+    store_error: Optional[str] = None
     try:
-        await _post_store_response(
+        stored_response = await _post_store_response(
             store_response_url,
             upload_record,
             image_bytes,
@@ -559,13 +591,11 @@ async def run_pest_detection_analysis(ctx: RunContext[FarmerContext], upload_id:
             pest_auth.user_id,
             auth_headers,
         )
-    except httpx.HTTPError as exc:
+    except (httpx.HTTPError, ValueError) as exc:
         logger.exception("Pest detection store-response API failed for %s", upload_id)
-        return (
-            f"{farmer_message}\n\n"
-            "(Note: analysis completed but storing the result on the server failed.)\n\n"
-            "Please try again later."
-        )
+        # Storing is an analytics/feedback side effect. Do not turn a valid
+        # prediction and advisory into a failed farmer experience.
+        store_error = str(exc)
 
     analysis = {
         "predict_pd_id": predict_pd_id,
@@ -573,6 +603,9 @@ async def run_pest_detection_analysis(ctx: RunContext[FarmerContext], upload_id:
         "predict_response": predict_response,
         "predictions": predictions,
         "advisory_response": advisory_response,
+        "stored_response": stored_response,
+        "store_error": store_error,
+        "pest_user_id": pest_auth.user_id,
         "farmer_message": farmer_message,
     }
     await update_pest_upload(upload_record["upload_id"], {"analysis": analysis})

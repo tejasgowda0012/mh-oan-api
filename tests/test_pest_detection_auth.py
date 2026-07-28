@@ -74,12 +74,17 @@ class PestLoginCandidateTests(unittest.TestCase):
 
 
 class _Response:
-    def __init__(self, payload):
+    def __init__(self, payload, status_code=200):
         self._payload = payload
         self.content = b"{}"
+        self.status_code = status_code
+        self.request = pest_detection_module.httpx.Request("POST", "https://example.test/login")
 
     def raise_for_status(self):
-        return None
+        if self.status_code >= 400:
+            raise pest_detection_module.httpx.HTTPStatusError(
+                "login rejected", request=self.request, response=self
+            )
 
     def json(self):
         return self._payload
@@ -130,6 +135,32 @@ class PestAuthenticationTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch.object(pest_detection_module, "_encrypt_uid", side_effect=lambda uid: uid),
             patch.object(pest_detection_module.httpx, "AsyncClient", _AsyncClient),
+        ):
+            auth = await _authenticate_pest_service_with_identity(ctx)
+
+        self.assertEqual(_AsyncClient.calls, ["45", PEST_GUEST_USER_ID])
+        self.assertEqual(auth.user_id, PEST_GUEST_USER_ID)
+        self.assertEqual(auth.headers, {"Authorization": "Bearer guest-access-token"})
+
+    async def test_http_rejected_authenticated_id_retries_as_guest(self):
+        _AsyncClient.calls = []
+        _AsyncClient.responses = [
+            _Response({"detail": "not found"}, status_code=404),
+            {"access_token": "guest-access-token"},
+        ]
+        ctx = _context(unique_id=45, role="public")
+
+        original_post = _AsyncClient.post
+
+        async def post_with_response(self, url, headers):
+            self.__class__.calls.append(headers["uid"])
+            result = self.__class__.responses.pop(0)
+            return result if isinstance(result, _Response) else _Response(result)
+
+        with (
+            patch.object(pest_detection_module, "_encrypt_uid", side_effect=lambda uid: uid),
+            patch.object(pest_detection_module.httpx, "AsyncClient", _AsyncClient),
+            patch.object(_AsyncClient, "post", post_with_response),
         ):
             auth = await _authenticate_pest_service_with_identity(ctx)
 
