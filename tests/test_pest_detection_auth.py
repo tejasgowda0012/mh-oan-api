@@ -50,7 +50,7 @@ class PestLoginCandidateTests(unittest.TestCase):
             unique_id=45,
         )
 
-        self.assertEqual(_get_pest_login_uid_candidates(ctx), ["45"])
+        self.assertEqual(_get_pest_login_uid_candidates(ctx), ["45", PEST_GUEST_USER_ID])
 
     def test_guest_only_uses_service_guest_id(self):
         ctx = _context(user_type="guest", mobile="7676884202", unique_id=45)
@@ -60,12 +60,12 @@ class PestLoginCandidateTests(unittest.TestCase):
     def test_farmer_id_precedes_unique_id_and_candidates_are_deduplicated(self):
         ctx = _context(farmer_id="12", unique_id="12", mobile="7676884202")
 
-        self.assertEqual(_get_pest_login_uid_candidates(ctx), ["12"])
+        self.assertEqual(_get_pest_login_uid_candidates(ctx), ["12", PEST_GUEST_USER_ID])
 
-    def test_authenticated_user_without_registration_id_does_not_become_guest(self):
+    def test_authenticated_user_without_registration_id_uses_guest_fallback(self):
         ctx = _context(mobile="7676884202", role="public")
 
-        self.assertEqual(_get_pest_login_uid_candidates(ctx), [])
+        self.assertEqual(_get_pest_login_uid_candidates(ctx), [PEST_GUEST_USER_ID])
 
     def test_registration_id_must_fit_postgres_integer(self):
         self.assertEqual(_normalize_pest_registration_id("00045"), "45")
@@ -119,10 +119,11 @@ class PestAuthenticationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(auth.user_id, "45")
         self.assertEqual(auth.headers, {"Authorization": "Bearer farmer-access-token"})
 
-    async def test_rejected_authenticated_id_does_not_retry_as_guest(self):
+    async def test_rejected_authenticated_id_retries_as_guest(self):
         _AsyncClient.calls = []
         _AsyncClient.responses = [
             {"status": 201, "response": "Invalid request"},
+            {"access_token": "guest-access-token"},
         ]
         ctx = _context(unique_id=45, mobile="7676884202", role="public")
 
@@ -130,10 +131,11 @@ class PestAuthenticationTests(unittest.IsolatedAsyncioTestCase):
             patch.object(pest_detection_module, "_encrypt_uid", side_effect=lambda uid: uid),
             patch.object(pest_detection_module.httpx, "AsyncClient", _AsyncClient),
         ):
-            with self.assertRaisesRegex(RuntimeError, "missing access token"):
-                await _authenticate_pest_service_with_identity(ctx)
+            auth = await _authenticate_pest_service_with_identity(ctx)
 
-        self.assertEqual(_AsyncClient.calls, ["45"])
+        self.assertEqual(_AsyncClient.calls, ["45", PEST_GUEST_USER_ID])
+        self.assertEqual(auth.user_id, PEST_GUEST_USER_ID)
+        self.assertEqual(auth.headers, {"Authorization": "Bearer guest-access-token"})
 
 
 if __name__ == "__main__":

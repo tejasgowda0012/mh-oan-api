@@ -78,6 +78,12 @@ def _get_pest_login_uid_candidates(ctx: RunContext[FarmerContext]) -> List[str]:
         if registration_id:
             candidates.append(registration_id)
 
+    # Prefer the authenticated farmer registration ID. The upstream service
+    # still supports its guest account for users whose JWT registration ID is
+    # missing or not present in the pest-service database. Never send mobile
+    # numbers: its login column is a PostgreSQL integer and phone numbers can
+    # overflow it.
+    candidates.append(PEST_GUEST_USER_ID)
     return list(dict.fromkeys(candidates))
 
 
@@ -177,12 +183,6 @@ async def _authenticate_pest_service_with_identity(
     timeout = settings.pest_detection_http_timeout
     last_payload: Any = {}
     candidates = _get_pest_login_uid_candidates(ctx)
-    if not candidates:
-        raise RuntimeError(
-            "Pest detection requires a valid farmer registration ID for "
-            "authenticated users"
-        )
-
     for candidate_index, uid in enumerate(candidates, start=1):
         encrypted_uid = _encrypt_uid(uid)
         async with httpx.AsyncClient(timeout=timeout) as client:
