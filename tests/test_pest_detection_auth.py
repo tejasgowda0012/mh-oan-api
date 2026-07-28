@@ -15,6 +15,7 @@ tools_package = types.ModuleType("agents.tools")
 tools_package.__path__ = [str(Path(__file__).parents[1] / "agents" / "tools")]
 sys.modules["agents.tools"] = tools_package
 
+from agents.tools import pest_detection as pest_detection_module
 from agents.tools.pest_detection import (
     PEST_GUEST_USER_ID,
     _authenticate_pest_service_with_identity,
@@ -109,8 +110,8 @@ class PestAuthenticationTests(unittest.IsolatedAsyncioTestCase):
         ctx = _context(unique_id=45, mobile="7676884202", role="public")
 
         with (
-            patch("agents.tools.pest_detection._encrypt_uid", side_effect=lambda uid: uid),
-            patch("agents.tools.pest_detection.httpx.AsyncClient", _AsyncClient),
+            patch.object(pest_detection_module, "_encrypt_uid", side_effect=lambda uid: uid),
+            patch.object(pest_detection_module.httpx, "AsyncClient", _AsyncClient),
         ):
             auth = await _authenticate_pest_service_with_identity(ctx)
 
@@ -126,8 +127,8 @@ class PestAuthenticationTests(unittest.IsolatedAsyncioTestCase):
         ctx = _context(unique_id=45, mobile="7676884202", role="public")
 
         with (
-            patch("agents.tools.pest_detection._encrypt_uid", side_effect=lambda uid: uid),
-            patch("agents.tools.pest_detection.httpx.AsyncClient", _AsyncClient),
+            patch.object(pest_detection_module, "_encrypt_uid", side_effect=lambda uid: uid),
+            patch.object(pest_detection_module.httpx, "AsyncClient", _AsyncClient),
         ):
             with self.assertRaisesRegex(RuntimeError, "missing access token"):
                 await _authenticate_pest_service_with_identity(ctx)

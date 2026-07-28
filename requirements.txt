@@ -16,6 +16,12 @@ tiktoken
 
 # Logfire
 logfire
+# pydantic-ai 0.2.4 imports the OpenTelemetry events API removed in 1.40+.
+# Keep the complete OpenTelemetry set aligned so the application can start.
+opentelemetry-api==1.39.0
+opentelemetry-sdk==1.39.0
+opentelemetry-exporter-otlp-proto-http==1.39.0
+opentelemetry-semantic-conventions==0.60b0
 
 # Redis for caching and stuff
 redis
