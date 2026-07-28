@@ -4,6 +4,7 @@ import sys
 import tempfile
 import types
 import unittest
+from inspect import signature
 from datetime import date, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -49,6 +50,12 @@ class _ToolContext:
 
 
 class UploadValidationTests(unittest.IsolatedAsyncioTestCase):
+    def test_image_route_requires_the_current_user_dependency(self):
+        dependency = signature(upload_router.get_upload_image).parameters[
+            "_user_info"
+        ].default
+        self.assertIs(dependency.dependency, _test_current_user)
+
     async def test_validates_metadata_and_real_image_signature(self):
         class Upload:
             content_type = "image/jpeg"

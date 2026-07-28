@@ -231,7 +231,10 @@ async def upload_pest_detection_image(
 
 
 @router.get("/{upload_id}/image")
-async def get_upload_image(request: Request, upload_id: str):
+async def get_upload_image(
+    upload_id: str,
+    _user_info: dict = Depends(get_current_user),
+):
     """Serve a temporarily stored upload image by id."""
     record = await get_pest_upload(upload_id)
     if not record:
