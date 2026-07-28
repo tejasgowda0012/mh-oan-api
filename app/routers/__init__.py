@@ -5,3 +5,5 @@ from . import transcribe
 from . import suggestions
 from . import tts
 from . import health
+from . import pest_detection
+from . import upload

@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
     api_prefix: str = "/api"
+    api_public_base_url: Optional[str] = os.getenv("API_PUBLIC_BASE_URL")
     rate_limit_requests_per_minute: int = 1000
 
     # Security Settings
@@ -49,6 +50,8 @@ class Settings(BaseSettings):
     # Cache Configuration
     default_cache_ttl: int = 60 * 60 * 24  # 24 hours
     suggestions_cache_ttl: int = 60 * 30    # 30 minutes
+    pest_upload_cache_ttl: int = 60 * 60 * 24  # 24 hours
+    pest_detection_http_timeout: float = 60.0
 
     # Logging Configuration
     log_level: str = "INFO"
@@ -87,4 +90,4 @@ class Settings(BaseSettings):
         env_file = ".env"
         extra = 'ignore'  # Ignore extra fields from .env
 
-settings = Settings() 
+settings = Settings()
