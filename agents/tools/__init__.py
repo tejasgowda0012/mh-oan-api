@@ -139,7 +139,7 @@ TOOLS = [
         analyze_pest_disease_image,
         takes_ctx=True,
         docstring_format='auto',
-        require_parameter_descriptions=True,
+        require_parameter_descriptions=False,
     ),
 
 ]
