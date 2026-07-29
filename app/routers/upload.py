@@ -1,15 +1,14 @@
 import asyncio
 import uuid
 from datetime import date, datetime, timedelta, timezone
-from pathlib import Path
 from typing import Any, Dict, Optional
 
-import aiofiles
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import JSONResponse, Response
 
-from app.config import settings
 from app.auth.jwt_auth import get_current_user
+from app.config import settings
+from app.services.pest_image_storage import PestImageStorageError, pest_image_storage
 from app.utils import get_cache, set_cache
 from helpers.utils import get_logger
 
@@ -18,7 +17,7 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/upload", tags=["upload-pest-detection-image"])
 
 # ---------------------------------------------------------------------------
-# Temp disk + Redis storage for crop image uploads
+# MinIO object storage + Redis metadata for crop image uploads
 # ---------------------------------------------------------------------------
 
 UPLOAD_KEY_PREFIX = "pest_upload:"
@@ -61,54 +60,6 @@ def generate_upload_id() -> str:
     return f"{UPLOAD_ID_PREFIX}{uuid.uuid4()}"
 
 
-def get_upload_dir() -> Path:
-    upload_dir = settings.base_dir / "temp" / "pest_detection"
-    upload_dir.mkdir(parents=True, exist_ok=True)
-    return upload_dir
-
-
-async def _delete_pest_upload_file_after_delay(
-    image_path: Path, delay_seconds: int | None = None
-) -> None:
-    """Delete an upload image after its strict one-hour retention period."""
-    await asyncio.sleep(
-        settings.pest_upload_image_ttl if delay_seconds is None else delay_seconds
-    )
-    try:
-        await asyncio.to_thread(image_path.unlink, missing_ok=True)
-    except OSError:
-        logger.exception("Unable to delete expired pest upload image %s", image_path.name)
-
-
-def schedule_pest_upload_file_deletion(image_path: Path) -> None:
-    """Start the per-upload deletion timer without delaying the HTTP response."""
-    asyncio.create_task(_delete_pest_upload_file_after_delay(image_path))
-
-
-async def purge_expired_pest_upload_files() -> int:
-    """Remove expired files left behind by a restart before a timer could fire."""
-    upload_dir = get_upload_dir()
-    cutoff = datetime.now(timezone.utc).timestamp() - settings.pest_upload_image_ttl
-    removed = 0
-    for image_path in upload_dir.iterdir():
-        if not image_path.is_file():
-            continue
-        try:
-            if image_path.stat().st_mtime <= cutoff:
-                await asyncio.to_thread(image_path.unlink, missing_ok=True)
-                removed += 1
-        except OSError:
-            logger.exception("Unable to prune pest upload image %s", image_path.name)
-    return removed
-
-
-async def run_pest_upload_cleanup_loop() -> None:
-    """Periodically remove files whose process-local deletion task was interrupted."""
-    while True:
-        await asyncio.sleep(settings.pest_upload_cleanup_interval)
-        await purge_expired_pest_upload_files()
-
-
 def _upload_cache_key(upload_id: str) -> str:
     return f"{UPLOAD_KEY_PREFIX}{upload_id}"
 
@@ -121,10 +72,19 @@ def _normalize_upload_id(upload_id: str) -> str:
 
 
 def build_upload_image_url(base_url: str, upload_id: str) -> str:
-    """Public URL to fetch a temporarily stored upload image."""
+    """Authenticated API URL to fetch a temporarily stored upload image."""
     base = base_url.rstrip("/")
     prefix = settings.api_prefix.rstrip("/")
     return f"{base}{prefix}/upload/{upload_id}/image"
+
+
+async def get_pest_upload_image_bytes(record: Dict[str, Any]) -> bytes:
+    """Read an upload image from MinIO, regardless of the API replica."""
+    object_key = record.get("object_key")
+    if not isinstance(object_key, str) or not object_key:
+        raise FileNotFoundError("Pest upload object key is unavailable")
+
+    return await asyncio.to_thread(pest_image_storage.get_image, object_key)
 
 
 async def save_pest_upload(
@@ -156,11 +116,14 @@ async def save_pest_upload(
     upload_id = generate_upload_id()
     extension = ALLOWED_IMAGE_CONTENT_TYPES[content_type]
     filename = f"{upload_id}{extension}"
-    image_path = get_upload_dir() / filename
+    object_key = f"pest-detection/{upload_id}{extension}"
 
-    async with aiofiles.open(image_path, "wb") as file_handle:
-        await file_handle.write(image_bytes)
-    schedule_pest_upload_file_deletion(image_path)
+    await asyncio.to_thread(
+        pest_image_storage.put_image,
+        object_key,
+        image_bytes,
+        content_type,
+    )
 
     image_url = build_upload_image_url(base_url, upload_id) if base_url else None
 
@@ -169,7 +132,7 @@ async def save_pest_upload(
         "crop_id": crop_id,
         "crop_type": crop_type,
         "sowing_date": sowing_date,
-        "image_path": str(image_path),
+        "object_key": object_key,
         "image_url": image_url,
         "image_filename": image.filename or filename,
         "content_type": content_type,
@@ -227,8 +190,8 @@ async def upload_pest_detection_image(
     """
     Upload a crop image and metadata for later pest and disease analysis in chat.
 
-    Saves the image under temp/pest_detection for at most one hour, stores crop
-    details in Redis for 24 hours, and returns an id plus the image URL.
+    Saves the image in MinIO and stores crop details in Redis. MinIO bucket
+    lifecycle retention controls how long the image object remains available.
     """
     try:
         record = await save_pest_upload(
@@ -246,12 +209,12 @@ async def upload_pest_detection_image(
             },
             status_code=400,
         )
-    except Exception as exc:
+    except Exception:
         logger.exception("Failed to save pest detection upload")
         return JSONResponse(
             {
                 "status": "error",
-                "message": f"Failed to save upload: {exc}",
+                "message": "Unable to store the image right now. Please try again later.",
             },
             status_code=500,
         )
@@ -284,12 +247,18 @@ async def get_upload_image(
     if not record:
         raise HTTPException(status_code=404, detail="Upload not found or expired.")
 
-    image_path = record.get("image_path")
-    if not image_path:
-        raise HTTPException(status_code=404, detail="Image file not available.")
+    try:
+        image_bytes = await get_pest_upload_image_bytes(record)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Image file not available.") from exc
+    except PestImageStorageError as exc:
+        logger.exception("Unable to read pest upload image")
+        raise HTTPException(
+            status_code=502, detail="Image storage is temporarily unavailable."
+        ) from exc
 
-    return FileResponse(
-        image_path,
+    return Response(
+        content=image_bytes,
         media_type=record.get("content_type") or "image/jpeg",
-        filename=record.get("image_filename"),
+        headers={"Cache-Control": "private, no-store"},
     )

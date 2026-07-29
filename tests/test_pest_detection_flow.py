@@ -1,7 +1,6 @@
 import json
 import os
 import sys
-import tempfile
 import types
 import unittest
 from inspect import signature
@@ -66,9 +65,7 @@ class UploadValidationTests(unittest.IsolatedAsyncioTestCase):
 
         sowing_date = (date.today() - timedelta(days=7)).isoformat()
         with (
-            tempfile.TemporaryDirectory() as upload_dir,
-            patch.object(upload_router, "get_upload_dir", return_value=Path(upload_dir)),
-            patch.object(upload_router, "schedule_pest_upload_file_deletion") as schedule_deletion,
+            patch.object(upload_router.pest_image_storage, "put_image") as put_image,
             patch.object(upload_router, "set_cache", new=AsyncMock()),
         ):
             record = await upload_router.save_pest_upload(
@@ -78,16 +75,23 @@ class UploadValidationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(record["crop_id"], "25")
         self.assertTrue(record["upload_id"].startswith("pest_"))
         self.assertIn("/api/upload/", record["image_url"])
-        schedule_deletion.assert_called_once_with(Path(record["image_path"]))
+        self.assertEqual(
+            record["object_key"], f"pest-detection/{record['upload_id']}.jpg"
+        )
+        put_image.assert_called_once()
 
-    async def test_image_deletion_timer_removes_the_file(self):
-        with tempfile.TemporaryDirectory() as upload_dir:
-            image_path = Path(upload_dir) / "pest_test.jpg"
-            image_path.write_bytes(b"crop-image")
+    async def test_reads_an_uploaded_image_from_minio_by_object_key(self):
+        with patch.object(
+            upload_router.pest_image_storage,
+            "get_image",
+            return_value=b"image-bytes",
+        ) as get_image:
+            image_bytes = await upload_router.get_pest_upload_image_bytes(
+                {"object_key": "pest-detection/pest_test.jpg"}
+            )
 
-            await upload_router._delete_pest_upload_file_after_delay(image_path, 0)
-
-            self.assertFalse(image_path.exists())
+        self.assertEqual(image_bytes, b"image-bytes")
+        get_image.assert_called_once_with("pest-detection/pest_test.jpg")
 
     async def test_rejects_spoofed_image_and_recent_sowing_date(self):
         class Upload:
@@ -113,71 +117,73 @@ class UploadValidationTests(unittest.IsolatedAsyncioTestCase):
 
 class PestAnalysisFlowTests(unittest.IsolatedAsyncioTestCase):
     async def test_complete_flow_persists_external_response_for_feedback(self):
-        with tempfile.NamedTemporaryFile(suffix=".jpg") as image:
-            image.write(b"\xff\xd8\xffimage")
-            image.flush()
-            upload_record = {
-                "upload_id": "pest_test",
-                "crop_id": "25",
-                "crop_type": "cotton",
-                "sowing_date": "2026-03-18",
-                "image_path": image.name,
-                "image_filename": "cotton.jpg",
-                "content_type": "image/jpeg",
-            }
-            updates = AsyncMock()
-            env = {
-                "PEST_DETECTION_PREDICT_URL": "https://example.test/predict",
-                "PEST_DETECTION_ADVISORY_URL": "https://example.test/advisory",
-                "PEST_DETECTION_STORE_RESPONSE_URL": "https://example.test/store",
-            }
-            with (
-                patch.dict(os.environ, env, clear=False),
-                patch.object(upload_router, "get_pest_upload", new=AsyncMock(return_value=upload_record)),
-                patch.object(upload_router, "update_pest_upload", new=updates),
-                patch.object(
-                    pest_detection_module,
-                    "_authenticate_pest_service_with_identity",
-                    new=AsyncMock(
-                        return_value=PestServiceAuth(
-                            headers={"Authorization": "Bearer token"}, user_id="3"
-                        )
-                    ),
+        upload_record = {
+            "upload_id": "pest_test",
+            "crop_id": "25",
+            "crop_type": "cotton",
+            "sowing_date": "2026-03-18",
+            "object_key": "pest-detection/pest_test.jpg",
+            "image_filename": "cotton.jpg",
+            "content_type": "image/jpeg",
+        }
+        updates = AsyncMock()
+        env = {
+            "PEST_DETECTION_PREDICT_URL": "https://example.test/predict",
+            "PEST_DETECTION_ADVISORY_URL": "https://example.test/advisory",
+            "PEST_DETECTION_STORE_RESPONSE_URL": "https://example.test/store",
+        }
+        with (
+            patch.dict(os.environ, env, clear=False),
+            patch.object(upload_router, "get_pest_upload", new=AsyncMock(return_value=upload_record)),
+            patch.object(
+                upload_router,
+                "get_pest_upload_image_bytes",
+                new=AsyncMock(return_value=b"\xff\xd8\xffimage"),
+            ),
+            patch.object(upload_router, "update_pest_upload", new=updates),
+            patch.object(
+                pest_detection_module,
+                "_authenticate_pest_service_with_identity",
+                new=AsyncMock(
+                    return_value=PestServiceAuth(
+                        headers={"Authorization": "Bearer token"}, user_id="3"
+                    )
                 ),
-                patch.object(
-                    pest_detection_module,
-                    "_post_multipart_predict",
-                    new=AsyncMock(
-                        return_value={
-                            "data": {
-                                "predictions": [
-                                    {"disease_type": "Leaf spot", "disease_id": "91"}
-                                ]
-                            }
+            ),
+            patch.object(
+                pest_detection_module,
+                "_post_multipart_predict",
+                new=AsyncMock(
+                    return_value={
+                        "data": {
+                            "predictions": [
+                                {"disease_type": "Leaf spot", "disease_id": "91"}
+                            ]
                         }
-                    ),
+                    }
                 ),
-                patch.object(
-                    pest_detection_module,
-                    "_post_crop_pd_advisory",
-                    new=AsyncMock(
-                        return_value={
-                            "data": [{
-                                "crop_name": "Cotton",
-                                "disease_pest": "Leaf spot",
-                                "preventive_measures": "Keep the field clean.",
-                                "curative_measures": "Use the recommended treatment.",
-                            }]
-                        }
-                    ),
+            ),
+            patch.object(
+                pest_detection_module,
+                "_post_crop_pd_advisory",
+                new=AsyncMock(
+                    return_value={
+                        "data": [{
+                            "crop_name": "Cotton",
+                            "disease_pest": "Leaf spot",
+                            "preventive_measures": "Keep the field clean.",
+                            "curative_measures": "Use the recommended treatment.",
+                        }]
+                    }
                 ),
-                patch.object(
-                    pest_detection_module,
-                    "_post_store_response",
-                    new=AsyncMock(return_value={"data": {"response_id": 812}}),
-                ),
-            ):
-                message = await run_pest_detection_analysis(_ToolContext(), "pest_test")
+            ),
+            patch.object(
+                pest_detection_module,
+                "_post_store_response",
+                new=AsyncMock(return_value={"data": {"response_id": 812}}),
+            ),
+        ):
+            message = await run_pest_detection_analysis(_ToolContext(), "pest_test")
 
         self.assertIn("Cotton", message)
         self.assertIn("Leaf spot", message)

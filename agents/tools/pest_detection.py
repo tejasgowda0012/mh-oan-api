@@ -1,7 +1,7 @@
 """
 Pest & disease detection: Mahapocra/TIH API calls via agent tools.
 
-Upload (temp file + Redis) lives in app.routers.upload.
+Upload metadata lives in Redis and image bytes live in MinIO via app.routers.upload.
 """
 
 import json
@@ -9,7 +9,6 @@ import os
 import base64
 import re
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -36,13 +35,6 @@ POSTGRES_INTEGER_MAX = 2_147_483_647
 class PestServiceAuth:
     headers: Dict[str, str]
     user_id: str
-
-
-def _read_image_bytes(image_path: str) -> bytes:
-    path = Path(image_path)
-    if not path.exists():
-        raise FileNotFoundError(f"Uploaded image file not found at {image_path}.")
-    return path.read_bytes()
 
 
 def _normalize_pest_registration_id(value: Any) -> Optional[str]:
@@ -502,7 +494,11 @@ async def _post_store_response(
         return {}
 
 async def run_pest_detection_analysis(ctx: RunContext[FarmerContext], upload_id: str) -> str:
-    from app.routers.upload import get_pest_upload, update_pest_upload
+    from app.routers.upload import (
+        get_pest_upload,
+        get_pest_upload_image_bytes,
+        update_pest_upload,
+    )
 
     upload_record = await get_pest_upload(upload_id)
     if not upload_record:
@@ -522,7 +518,7 @@ async def run_pest_detection_analysis(ctx: RunContext[FarmerContext], upload_id:
     predict_url = configured_urls["PEST_DETECTION_PREDICT_URL"]
     advisory_url = configured_urls["PEST_DETECTION_ADVISORY_URL"]
     store_response_url = configured_urls["PEST_DETECTION_STORE_RESPONSE_URL"]
-    image_bytes = _read_image_bytes(upload_record["image_path"])
+    image_bytes = await get_pest_upload_image_bytes(upload_record)
 
     try:
         pest_auth = await _authenticate_pest_service_with_identity(ctx)

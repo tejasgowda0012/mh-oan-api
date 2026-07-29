@@ -11,9 +11,30 @@ services:
     env_file:
       - .env  
     restart: unless-stopped
+    depends_on:
+      - minio
+    networks:
+      - svanetwork
+
+  minio:
+    image: minio/minio:latest
+    container_name: sva_minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    restart: unless-stopped
     networks:
       - svanetwork
       
 networks:
   svanetwork:
     external: true
+
+volumes:
+  minio_data:
