@@ -33,7 +33,7 @@ AGUI_VIDEO_LIMIT = 2
 # Max documents (grouped by doc_id) attached to AG-UI for grounding validation
 # (agent still sees full top_k). Chunk count per document is unbounded (None) so
 # every retrieved chunk for a shown document is visible for grounding validation.
-AGUI_DOCUMENT_LIMIT = 3
+AGUI_DOCUMENT_LIMIT = 5
 AGUI_CHUNK_LIMIT = None
 
 
