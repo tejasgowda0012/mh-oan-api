@@ -61,17 +61,36 @@ class FarmerContext(BaseModel):
             self.related_videos.append(video)
 
     def add_related_documents(self, documents: List[Dict[str, Any]]) -> None:
-        """Append unique structured document cards for AG-UI validation clients."""
+        """Append structured document cards for AG-UI validation clients.
+
+        A document already added this turn (same id/title, from an earlier
+        search_documents call) gets its new chunks merged in — deduped by chunk
+        id — instead of being skipped, so a second search that resurfaces the
+        same document with different chunks doesn't lose those chunks.
+        """
         if not documents:
             return
-        seen = {d.get("id") or d.get("title") for d in self.related_documents}
+        by_key = {
+            (d.get("id") or d.get("title")): d
+            for d in self.related_documents
+            if d.get("id") or d.get("title")
+        }
         for document in documents:
             key = document.get("id") or document.get("title")
-            if key and key in seen:
+            existing = by_key.get(key) if key else None
+            if existing is None:
+                self.related_documents.append(document)
+                if key:
+                    by_key[key] = document
                 continue
-            if key:
-                seen.add(key)
-            self.related_documents.append(document)
+            existing_chunk_ids = {c.get("id") for c in existing.get("chunks", [])}
+            for chunk in document.get("chunks", []):
+                if chunk.get("id") not in existing_chunk_ids:
+                    existing.setdefault("chunks", []).append(chunk)
+                    existing_chunk_ids.add(chunk.get("id"))
+            new_score = document.get("score")
+            if new_score is not None and (existing.get("score") is None or new_score > existing["score"]):
+                existing["score"] = new_score
 
     @field_validator("farmer_id", "unique_id", "memory_user_id", mode="before")
     @classmethod
