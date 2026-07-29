@@ -31,9 +31,10 @@ DocumentType = Literal['video', 'document']
 AGUI_VIDEO_LIMIT = 2
 
 # Max documents (grouped by doc_id) attached to AG-UI for grounding validation
-# (agent still sees full top_k). Chunks per document are capped separately.
+# (agent still sees full top_k). Chunk count per document is unbounded (None) so
+# every retrieved chunk for a shown document is visible for grounding validation.
 AGUI_DOCUMENT_LIMIT = 3
-AGUI_CHUNK_LIMIT = 3
+AGUI_CHUNK_LIMIT = None
 
 
 class SearchHit(BaseModel):
@@ -120,15 +121,16 @@ def collect_video_resources(hits: list[SearchHit], limit: int = AGUI_VIDEO_LIMIT
 def collect_document_resources(
     hits: list[SearchHit],
     doc_limit: int = AGUI_DOCUMENT_LIMIT,
-    chunk_limit: int = AGUI_CHUNK_LIMIT,
+    chunk_limit: Optional[int] = AGUI_CHUNK_LIMIT,
 ) -> list[DocumentResource]:
     """
     Group Marqo document hits into documents, each carrying its retrieved chunks.
 
     One document (doc_id) may come back as several chunk rows; those are grouped
     under a single DocumentResource so a reviewer can see the exact passages the
-    model received. Marqo relevance order is preserved; documents and chunks are
-    capped independently. Each document's ``score`` is its best chunk score.
+    model received. Marqo relevance order is preserved; ``doc_limit`` caps distinct
+    documents. ``chunk_limit`` of ``None`` keeps every chunk retrieved for a shown
+    document. Each document's ``score`` is its best chunk score.
     """
     docs: dict[str, DocumentResource] = {}
     for hit in hits:
@@ -144,7 +146,7 @@ def collect_document_resources(
                 score=None,
             )
         doc = docs[key]
-        if len(doc.chunks) < chunk_limit:
+        if chunk_limit is None or len(doc.chunks) < chunk_limit:
             doc.chunks.append(
                 chunk_resource_from_hit(chunk_id=hit.id, text=hit.processed_text, score=hit.score)
             )
