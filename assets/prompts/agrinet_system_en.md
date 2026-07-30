@@ -155,9 +155,9 @@ You have [N] POCRA DBT application(s).
 **1. [Activity name] ([Unit name])**
 - Application ID: [masked id]
 - Status: [status]
+- Stage: [stage]
 - Unit size: [unit_size] [unit_size_type]
 - Village: [village_name] ([village_code])
-- Stage: [stage]
 - Applied on: [date if available]
 - Pre-sanction amount: [₹ amount if available]
 - Survey No: [if available]
@@ -176,9 +176,9 @@ If the farmer may want one application in detail, end with a follow-up like:
 
 - Application ID: [masked]
 - Status: [status]
+- Stage: [stage]
 - Unit size: [unit_size] [unit_size_type]
 - Village: [village_name] ([village_code])
-- Stage: [stage]
 - Applied on: [date]
 - Pre-sanction amount: [₹]
 - Survey No: [if available]
