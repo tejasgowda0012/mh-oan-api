@@ -1,6 +1,6 @@
 import asyncio
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
@@ -30,31 +30,6 @@ ALLOWED_IMAGE_CONTENT_TYPES = {
     "image/webp": ".webp",
 }
 MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024
-
-
-def _validate_upload_metadata(crop_id: str, crop_type: str, sowing_date: str) -> None:
-    if not crop_id.isdigit() or int(crop_id) <= 0:
-        raise ValueError("crop_id must be a positive integer.")
-    if not crop_type or len(crop_type) > 100:
-        raise ValueError("crop_type is required and must be at most 100 characters.")
-    try:
-        parsed_sowing_date = date.fromisoformat(sowing_date)
-    except ValueError as exc:
-        raise ValueError("sowing_date must use YYYY-MM-DD format.") from exc
-    if parsed_sowing_date > date.today() - timedelta(days=7):
-        raise ValueError("sowing_date must be at least 7 days ago.")
-
-
-def _matches_image_signature(content_type: str, content: bytes) -> bool:
-    signatures = {
-        "image/jpeg": content.startswith(b"\xff\xd8\xff"),
-        "image/jpg": content.startswith(b"\xff\xd8\xff"),
-        "image/png": content.startswith(b"\x89PNG\r\n\x1a\n"),
-        "image/webp": len(content) >= 12
-        and content.startswith(b"RIFF")
-        and content[8:12] == b"WEBP",
-    }
-    return signatures.get(content_type, False)
 
 
 def generate_upload_id() -> str:
@@ -98,7 +73,6 @@ async def save_pest_upload(
     crop_id = crop_id.strip()
     crop_type = crop_type.strip()
     sowing_date = sowing_date.strip()
-    _validate_upload_metadata(crop_id, crop_type, sowing_date)
 
     content_type = image.content_type or "application/octet-stream"
     if content_type not in ALLOWED_IMAGE_CONTENT_TYPES:
@@ -111,8 +85,6 @@ async def save_pest_upload(
         raise ValueError("Uploaded image is empty.")
     if len(image_bytes) > MAX_IMAGE_SIZE_BYTES:
         raise ValueError("Uploaded image exceeds the 10 MB size limit.")
-    if not _matches_image_signature(content_type, image_bytes):
-        raise ValueError("Uploaded file content does not match its image type.")
 
     upload_id = generate_upload_id()
     extension = ALLOWED_IMAGE_CONTENT_TYPES[content_type]
@@ -204,6 +176,7 @@ async def upload_pest_detection_image(
             base_url=_public_base_url(request),
         )
     except ValueError as exc:
+        logger.warning("Rejected pest detection upload: %s", exc)
         return JSONResponse(
             {
                 "status": "error",
