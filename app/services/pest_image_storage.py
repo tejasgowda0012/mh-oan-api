@@ -29,21 +29,13 @@ class PestImageStorage:
         if not settings.minio_access_key or not settings.minio_secret_key:
             raise PestImageStorageError("MinIO access credentials are not configured")
 
-        try:
-            self._client = boto3.client(
-                "s3",
-                endpoint_url=settings.minio_endpoint_url,
-                aws_access_key_id=settings.minio_access_key,
-                aws_secret_access_key=settings.minio_secret_key,
-                config=Config(
-                    signature_version="s3v4",
-                    s3={"addressing_style": "path"},
-                ),
-            )
-        except (BotoCoreError, ValueError) as exc:
-            raise PestImageStorageError(
-                "Invalid MinIO endpoint configuration"
-            ) from exc
+        self._client = boto3.client(
+            "s3",
+            endpoint_url=settings.minio_endpoint_url,
+            aws_access_key_id=settings.minio_access_key,
+            aws_secret_access_key=settings.minio_secret_key,
+            config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
+        )
         return self._client
 
     def _ensure_bucket(self) -> None:
