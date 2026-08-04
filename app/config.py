@@ -54,6 +54,15 @@ class Settings(BaseSettings):
     suggestions_cache_ttl: int = 60 * 30    # 30 minutes
     pest_upload_cache_ttl: int = 60 * 60 * 24  # 24 hours
 
+    # MinIO (S3-compatible) storage for pest images. Configure lifecycle
+    # retention on this bucket; the API never deletes objects itself.
+    minio_endpoint_url: Optional[str] = os.getenv("MINIO_ENDPOINT_URL")
+    minio_access_key: Optional[str] = os.getenv("MINIO_ACCESS_KEY")
+    minio_secret_key: Optional[str] = os.getenv("MINIO_SECRET_KEY")
+    minio_pest_upload_bucket: str = os.getenv(
+        "MINIO_PEST_UPLOAD_BUCKET", "pest-detection-uploads"
+    )
+
     # Pest & disease detection (Mahapocra / TIH)
     # URLs are read directly from environment variables in `agents/tools/pest_detection.py`.
     pest_detection_http_timeout: float = 60.0
