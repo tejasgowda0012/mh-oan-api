@@ -186,4 +186,5 @@ cython_debug/
 .DS_Store
 .DS_Store
 dump.rdb
+minio-data/
 app/auth/jwt_auth.py
