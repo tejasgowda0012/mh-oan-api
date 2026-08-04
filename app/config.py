@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
     api_prefix: str = "/api"
+    api_public_base_url: Optional[str] = os.getenv("API_PUBLIC_BASE_URL")
     rate_limit_requests_per_minute: int = 1000
 
     # Security Settings
@@ -49,6 +50,17 @@ class Settings(BaseSettings):
     # Cache Configuration
     default_cache_ttl: int = 60 * 60 * 24  # 24 hours
     suggestions_cache_ttl: int = 60 * 30    # 30 minutes
+    pest_upload_cache_ttl: int = 60 * 60 * 24  # 24 hours
+    pest_detection_http_timeout: float = 60.0
+
+    # MinIO (S3-compatible) storage for pest images. Configure lifecycle
+    # retention on this bucket; the API never deletes objects itself.
+    minio_endpoint_url: Optional[str] = os.getenv("MINIO_ENDPOINT_URL")
+    minio_access_key: Optional[str] = os.getenv("MINIO_ACCESS_KEY")
+    minio_secret_key: Optional[str] = os.getenv("MINIO_SECRET_KEY")
+    minio_pest_upload_bucket: str = os.getenv(
+        "MINIO_PEST_UPLOAD_BUCKET", "pest-detection-uploads"
+    )
 
     # Logging Configuration
     log_level: str = "INFO"
@@ -87,4 +99,4 @@ class Settings(BaseSettings):
         env_file = ".env"
         extra = 'ignore'  # Ignore extra fields from .env
 
-settings = Settings() 
+settings = Settings()

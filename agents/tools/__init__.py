@@ -11,6 +11,7 @@ from agents.tools.mahadbt import get_scheme_status
 from agents.tools.terms import search_terms
 from agents.tools.scheme_info import get_scheme_codes, get_scheme_info, get_multiple_schemes_info
 from agents.tools.staff_contact import contact_agricultural_staff
+from agents.tools.pest_detection import analyze_pest_disease_image
 
 TOOLS = [
     # Search Terms
@@ -131,6 +132,14 @@ TOOLS = [
         takes_ctx=False,
         docstring_format='auto', 
         require_parameter_descriptions=True,
+    ),
+
+    # Pest and disease analysis for an image uploaded through POST /api/upload.
+    Tool(
+        analyze_pest_disease_image,
+        takes_ctx=True,
+        docstring_format='auto',
+        require_parameter_descriptions=False,
     ),
 
 ]

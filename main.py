@@ -1,24 +1,23 @@
+from contextlib import asynccontextmanager
+
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
-from contextlib import asynccontextmanager
 
 load_dotenv()
 
 # Import all routers
-from app.routers import chat, transcribe, suggestions, tts, health
+from app.routers import chat, health, pest_detection, suggestions, transcribe, tts, upload
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan events for startup and shutdown"""
-    # Startup
     print(f"🚀 {settings.app_name} starting up...")
     print(f"📍 Environment: {settings.environment}")
     print(f"🔧 Debug mode: {settings.debug}")
     print(f"🌐 CORS origins: {settings.allowed_origins}")
     yield
-    # Shutdown
     print(f"🛑 {settings.app_name} shutting down...")
 
 # Create FastAPI app with settings
@@ -54,4 +53,6 @@ app.include_router(chat.router, prefix=settings.api_prefix)
 app.include_router(transcribe.router, prefix=settings.api_prefix)
 app.include_router(suggestions.router, prefix=settings.api_prefix)
 app.include_router(tts.router, prefix=settings.api_prefix)
-app.include_router(health.router, prefix=settings.api_prefix) 
+app.include_router(health.router, prefix=settings.api_prefix)
+app.include_router(upload.router, prefix=settings.api_prefix)
+app.include_router(pest_detection.router, prefix=settings.api_prefix)

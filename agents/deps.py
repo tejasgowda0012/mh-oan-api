@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any, Dict, Optional
 from pydantic import BaseModel, Field, field_validator
 from langcodes import Language
 
@@ -21,6 +21,21 @@ class FarmerContext(BaseModel):
     lang_code: str = Field(description="The language code of the user's question.", default='mr')
     moderation_str: Optional[str] = Field(default=None, description="The moderation result of the user's question.")
     farmer_id: Optional[str] = Field(default=None, description="The farmer ID of the user.")
+    unique_id: Optional[str] = Field(
+        default=None,
+        description="Farmer registration number when farmer_id is unavailable.",
+    )
+    user_info: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Authenticated JWT metadata.",
+    )
+
+    @field_validator("farmer_id", "unique_id", mode="before")
+    @classmethod
+    def _coerce_optional_identifiers(cls, value):
+        if value in (None, ""):
+            return value
+        return str(value)
 
     def update_moderation_str(self, moderation_str: str):
         """Update the moderation result of the user's question."""
@@ -33,6 +48,14 @@ class FarmerContext(BaseModel):
     def get_farmer_id(self) -> Optional[str]:
         """Get the farmer ID of the user."""
         return self.farmer_id
+
+    def get_user_claim(self, *names: str) -> Optional[Any]:
+        """Return the first non-empty authenticated claim matching names."""
+        for name in names:
+            value = self.user_info.get(name)
+            if value not in (None, ""):
+                return value
+        return None
         
     def get_moderation_str(self) -> Optional[str]:
         """Get the moderation result of the user's question."""

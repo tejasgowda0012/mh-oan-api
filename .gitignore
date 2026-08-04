@@ -185,3 +185,6 @@ cython_debug/
 .pypirc
 .DS_Store
 .DS_Store
+
+# Temporary pest-detection image uploads
+temp/pest_detection/
