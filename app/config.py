@@ -78,7 +78,6 @@ class Settings(BaseSettings):
     minio_endpoint_url: Optional[str] = os.getenv("MINIO_ENDPOINT_URL")
     minio_access_key: Optional[str] = os.getenv("MINIO_ACCESS_KEY")
     minio_secret_key: Optional[str] = os.getenv("MINIO_SECRET_KEY")
-    minio_region: str = os.getenv("MINIO_REGION", "us-east-1")
     minio_pest_upload_bucket: str = os.getenv(
         "MINIO_PEST_UPLOAD_BUCKET", "pest-detection-uploads"
     )

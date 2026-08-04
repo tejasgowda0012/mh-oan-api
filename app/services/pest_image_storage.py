@@ -34,7 +34,6 @@ class PestImageStorage:
             endpoint_url=settings.minio_endpoint_url,
             aws_access_key_id=settings.minio_access_key,
             aws_secret_access_key=settings.minio_secret_key,
-            region_name=settings.minio_region,
             config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
         )
         return self._client
