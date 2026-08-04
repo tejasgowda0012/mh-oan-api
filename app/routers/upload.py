@@ -1,14 +1,15 @@
+import asyncio
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Dict, Optional
 
-import aiofiles
-from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import JSONResponse, Response
 
+from app.auth.jwt_auth import get_current_user
 from app.config import settings
 from app.core.limiter import limiter
+from app.services.pest_image_storage import PestImageStorageError, pest_image_storage
 from app.utils import get_cache, set_cache
 from helpers.utils import get_logger
 
@@ -17,13 +18,14 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/upload", tags=["upload-pest-detection-image"])
 
 # ---------------------------------------------------------------------------
-# Temp disk + Redis storage for crop image uploads
+# MinIO object storage + Redis metadata for crop image uploads
 # ---------------------------------------------------------------------------
 
 UPLOAD_KEY_PREFIX = "pest_upload:"
 UPLOAD_ID_PREFIX = "pest_"
 ALLOWED_IMAGE_CONTENT_TYPES = {
     "image/jpeg": ".jpg",
+    "image/jpg": ".jpg",
     "image/png": ".png",
     "image/webp": ".webp",
 }
@@ -32,12 +34,6 @@ MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024
 
 def generate_upload_id() -> str:
     return f"{UPLOAD_ID_PREFIX}{uuid.uuid4()}"
-
-
-def get_upload_dir() -> Path:
-    upload_dir = settings.base_dir / "temp" / "pest_detection"
-    upload_dir.mkdir(parents=True, exist_ok=True)
-    return upload_dir
 
 
 def _upload_cache_key(upload_id: str) -> str:
@@ -52,10 +48,19 @@ def _normalize_upload_id(upload_id: str) -> str:
 
 
 def build_upload_image_url(base_url: str, upload_id: str) -> str:
-    """Public URL to fetch a temporarily stored upload image."""
+    """Authenticated API URL to fetch a temporarily stored upload image."""
     base = base_url.rstrip("/")
     prefix = settings.api_prefix.rstrip("/")
     return f"{base}{prefix}/upload/{upload_id}/image"
+
+
+async def get_pest_upload_image_bytes(record: Dict[str, Any]) -> bytes:
+    """Read an upload image from MinIO, regardless of the API replica."""
+    object_key = record.get("object_key")
+    if not isinstance(object_key, str) or not object_key:
+        raise FileNotFoundError("Pest upload object key is unavailable")
+
+    return await asyncio.to_thread(pest_image_storage.get_image, object_key)
 
 
 async def save_pest_upload(
@@ -65,6 +70,10 @@ async def save_pest_upload(
     sowing_date: str,
     base_url: Optional[str] = None,
 ) -> Dict[str, Any]:
+    crop_id = crop_id.strip()
+    crop_type = crop_type.strip()
+    sowing_date = sowing_date.strip()
+
     content_type = image.content_type or "application/octet-stream"
     if content_type not in ALLOWED_IMAGE_CONTENT_TYPES:
         raise ValueError(
@@ -80,10 +89,14 @@ async def save_pest_upload(
     upload_id = generate_upload_id()
     extension = ALLOWED_IMAGE_CONTENT_TYPES[content_type]
     filename = f"{upload_id}{extension}"
-    image_path = get_upload_dir() / filename
+    object_key = f"pest-detection/{upload_id}{extension}"
 
-    async with aiofiles.open(image_path, "wb") as file_handle:
-        await file_handle.write(image_bytes)
+    await asyncio.to_thread(
+        pest_image_storage.put_image,
+        object_key,
+        image_bytes,
+        content_type,
+    )
 
     image_url = build_upload_image_url(base_url, upload_id) if base_url else None
 
@@ -92,7 +105,7 @@ async def save_pest_upload(
         "crop_id": crop_id,
         "crop_type": crop_type,
         "sowing_date": sowing_date,
-        "image_path": str(image_path),
+        "object_key": object_key,
         "image_url": image_url,
         "image_filename": image.filename or filename,
         "content_type": content_type,
@@ -146,12 +159,13 @@ async def upload_pest_detection_image(
     crop_id: str = Form(...),
     crop_type: str = Form(...),
     sowing_date: str = Form(...),
+    _user_info: dict = Depends(get_current_user),
 ):
     """
     Upload a crop image and metadata for later pest and disease analysis in chat.
 
-    Saves the image under temp/pest_detection, stores crop details and image URL in Redis,
-    and returns an id (upload_id) plus the public image URL.
+    Saves the image in MinIO and stores crop details in Redis. MinIO bucket
+    lifecycle retention controls how long the image object remains available.
     """
     try:
         record = await save_pest_upload(
@@ -162,6 +176,7 @@ async def upload_pest_detection_image(
             base_url=_public_base_url(request),
         )
     except ValueError as exc:
+        logger.warning("Rejected pest detection upload: %s", exc)
         return JSONResponse(
             {
                 "status": "error",
@@ -169,12 +184,12 @@ async def upload_pest_detection_image(
             },
             status_code=400,
         )
-    except Exception as exc:
+    except Exception:
         logger.exception("Failed to save pest detection upload")
         return JSONResponse(
             {
                 "status": "error",
-                "message": f"Failed to save upload: {exc}",
+                "message": "Unable to store the image right now. Please try again later.",
             },
             status_code=500,
         )
@@ -199,18 +214,28 @@ async def upload_pest_detection_image(
 
 @router.get("/{upload_id}/image")
 @limiter.limit("1000/hour")
-async def get_upload_image(request: Request, upload_id: str):
+async def get_upload_image(
+    request: Request,
+    upload_id: str,
+    _user_info: dict = Depends(get_current_user),
+):
     """Serve a temporarily stored upload image by id."""
     record = await get_pest_upload(upload_id)
     if not record:
         raise HTTPException(status_code=404, detail="Upload not found or expired.")
 
-    image_path = record.get("image_path")
-    if not image_path:
-        raise HTTPException(status_code=404, detail="Image file not available.")
+    try:
+        image_bytes = await get_pest_upload_image_bytes(record)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Image file not available.") from exc
+    except PestImageStorageError as exc:
+        logger.exception("Unable to read pest upload image")
+        raise HTTPException(
+            status_code=502, detail="Image storage is temporarily unavailable."
+        ) from exc
 
-    return FileResponse(
-        image_path,
+    return Response(
+        content=image_bytes,
         media_type=record.get("content_type") or "image/jpeg",
-        filename=record.get("image_filename"),
+        headers={"Cache-Control": "private, no-store"},
     )
