@@ -118,6 +118,26 @@ def collect_video_resources(hits: list[SearchHit], limit: int = AGUI_VIDEO_LIMIT
     return dedupe_videos(resources)[:limit]
 
 
+def dedupe_video_hits(hits: list[SearchHit]) -> list[SearchHit]:
+    """Keep Marqo order; one chunk per playable URL (or name if no URL)."""
+    seen_urls: set[str] = set()
+    seen_names: set[str] = set()
+    out: list[SearchHit] = []
+    for hit in hits:
+        url = (hit.video_url or "").strip()
+        name_key = (hit.name or "").strip().lower()
+        if url:
+            if url in seen_urls:
+                continue
+            seen_urls.add(url)
+        elif name_key:
+            if name_key in seen_names:
+                continue
+            seen_names.add(name_key)
+        out.append(hit)
+    return out
+
+
 def collect_document_resources(
     hits: list[SearchHit],
     doc_limit: int = AGUI_DOCUMENT_LIMIT,
@@ -257,12 +277,11 @@ async def search_videos(
 
     Differences from search_documents:
       - filter_string is type:video
+      - URL dedupe (ingest may split one YouTube into many chunk rows)
       - up to AGUI_VIDEO_LIMIT playable hits stored on FarmerContext for AG-UI
-      - URL dedupe when packaging AG-UI (ingest may split one YouTube into many rows)
 
-    Ranking is Marqo's (hybrid), same spirit as documents. No stopword re-rank.
-
-    If Marqo returns no hits: short empty message, store nothing (do not invent videos).
+    Typical flow: search_terms → English query → search_documents → search_videos
+    (same English topic). FAQ / app-help may call search_videos alone.
 
     Args:
         query: The search query in *English* (required) — same topic as documents
@@ -283,22 +302,13 @@ async def search_videos(
         client = marqo.Client(url=endpoint_url)
         logger.info(f"Searching videos for '{query}' in index '{index_name}' limit={top_k}")
 
-        try:
-            results = _marqo_hybrid_search(
-                client=client,
-                index_name=index_name,
-                query=query,
-                top_k=top_k,
-                type_filter="video",
-            )
-        except Exception as hybrid_err:
-            logger.warning("search_videos hybrid error (%s); trying tensor", hybrid_err)
-            results = client.index(index_name).search(
-                q=query,
-                limit=top_k,
-                filter_string="type:video",
-                search_method="tensor",
-            )["hits"]
+        results = _marqo_hybrid_search(
+            client=client,
+            index_name=index_name,
+            query=query,
+            top_k=top_k,
+            type_filter="video",
+        )
 
         if len(results) == 0:
             return (
@@ -308,7 +318,9 @@ async def search_videos(
             )
 
         lang_code = ctx.deps.lang_code
-        search_hits = [SearchHit(**hit, lang_code=lang_code) for hit in results]
+        search_hits = dedupe_video_hits(
+            [SearchHit(**hit, lang_code=lang_code) for hit in results]
+        )
         logger.info(
             "search_videos hits=%s top=%s query=%r",
             len(search_hits),
@@ -316,7 +328,6 @@ async def search_videos(
             query,
         )
 
-        # AG-UI: Marqo order, playable URLs only, dedupe by URL.
         resources = collect_video_resources(search_hits, limit=AGUI_VIDEO_LIMIT)
         if resources:
             payload: list[dict[str, Any]] = [r.to_ag_ui_dict() for r in resources]
