@@ -28,7 +28,7 @@ logger = get_logger(__name__)
 DocumentType = Literal['video', 'document']
 
 # Max videos attached to AG-UI for inline playback (agent still sees full top_k).
-AGUI_VIDEO_LIMIT = 2
+AGUI_VIDEO_LIMIT = 1
 
 # Max documents (grouped by doc_id) attached to AG-UI for grounding validation
 # (agent still sees full top_k). Chunk count per document is unbounded (None) so
