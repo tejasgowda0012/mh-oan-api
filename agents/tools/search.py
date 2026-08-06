@@ -30,11 +30,41 @@ DocumentType = Literal['video', 'document']
 # Max videos attached to AG-UI for inline playback (agent still sees full top_k).
 AGUI_VIDEO_LIMIT = 1
 
+# Minimum Marqo hybrid RRF `_score` for a video hit to count as relevant.
+# With rrfK=60, a single-list rank-1 score is ~1/61 ≈ 0.0164; appearing in
+# both lexical and tensor lists typically lands ≥ ~0.02. Override via env.
+DEFAULT_VIDEO_MIN_RELEVANCE_SCORE = 0.02
+
 # Max documents (grouped by doc_id) attached to AG-UI for grounding validation
 # (agent still sees full top_k). Chunk count per document is unbounded (None) so
 # every retrieved chunk for a shown document is visible for grounding validation.
 AGUI_DOCUMENT_LIMIT = 5
 AGUI_CHUNK_LIMIT = None
+
+
+def _video_min_relevance_score() -> float:
+    raw = os.getenv("VIDEO_MIN_RELEVANCE_SCORE")
+    if raw is None or raw.strip() == "":
+        return DEFAULT_VIDEO_MIN_RELEVANCE_SCORE
+    try:
+        return float(raw)
+    except ValueError:
+        logger.warning(
+            "Invalid VIDEO_MIN_RELEVANCE_SCORE=%r; using default %s",
+            raw,
+            DEFAULT_VIDEO_MIN_RELEVANCE_SCORE,
+        )
+        return DEFAULT_VIDEO_MIN_RELEVANCE_SCORE
+
+
+def _quiet_skip_videos_message(query: str, *, reason: str) -> str:
+    """Agent-only: omit videos silently — do not tell the farmer none exist."""
+    return (
+        f"No relevant videos for `{query}` ({reason}).\n"
+        "Omit the video section silently. Do not show or invent videos. "
+        "Do not write the watch-below cue. Do not tell the farmer that videos "
+        "are unavailable unless they explicitly ask whether a video exists."
+    )
 
 
 class SearchHit(BaseModel):
@@ -136,6 +166,25 @@ def dedupe_video_hits(hits: list[SearchHit]) -> list[SearchHit]:
             seen_names.add(name_key)
         out.append(hit)
     return out
+
+
+def filter_video_hits_by_min_score(
+    hits: list[SearchHit],
+    min_score: float,
+) -> list[SearchHit]:
+    """Drop weak Marqo neighbors below the relevance threshold (preserve order)."""
+    kept: list[SearchHit] = []
+    for hit in hits:
+        if hit.score >= min_score:
+            kept.append(hit)
+        else:
+            logger.info(
+                "search_videos drop below-threshold name=%s score=%.4f min=%.4f",
+                hit.name,
+                hit.score,
+                min_score,
+            )
+    return kept
 
 
 def collect_document_resources(
@@ -279,6 +328,8 @@ async def search_videos(
       - filter_string is type:video
       - URL dedupe (ingest may split one YouTube into many chunk rows)
       - up to AGUI_VIDEO_LIMIT playable hits stored on FarmerContext for AG-UI
+      - drops hits below VIDEO_MIN_RELEVANCE_SCORE (default 0.02 RRF)
+      - below-threshold / empty → quiet skip (no farmer-facing "no videos")
 
     Typical flow: search_terms → English query → search_documents → search_videos
     (same English topic). FAQ / app-help may call search_videos alone.
@@ -288,7 +339,8 @@ async def search_videos(
         top_k: Maximum number of results to return (default: 10)
 
     Returns:
-        Formatted list of videos, or "No videos found for `query`"
+        Formatted list of videos above the relevance threshold, or a quiet
+        skip message (no farmer-facing "no videos" line).
     """
     try:
         endpoint_url = os.getenv('MARQO_ENDPOINT_URL')
@@ -300,7 +352,14 @@ async def search_videos(
             raise ValueError("Marqo index name is required")
 
         client = marqo.Client(url=endpoint_url)
-        logger.info(f"Searching videos for '{query}' in index '{index_name}' limit={top_k}")
+        min_score = _video_min_relevance_score()
+        logger.info(
+            "Searching videos for '%s' in index '%s' limit=%s min_score=%s",
+            query,
+            index_name,
+            top_k,
+            min_score,
+        )
 
         results = _marqo_hybrid_search(
             client=client,
@@ -311,32 +370,40 @@ async def search_videos(
         )
 
         if len(results) == 0:
-            return (
-                f"No videos found for `{query}`.\n"
-                "Do not show or invent videos. If the farmer asks for videos on this "
-                "topic, say no videos are available."
-            )
+            return _quiet_skip_videos_message(query, reason="empty index results")
 
         lang_code = ctx.deps.lang_code
-        search_hits = dedupe_video_hits(
-            [SearchHit(**hit, lang_code=lang_code) for hit in results]
+        search_hits = filter_video_hits_by_min_score(
+            dedupe_video_hits(
+                [SearchHit(**hit, lang_code=lang_code) for hit in results]
+            ),
+            min_score=min_score,
         )
         logger.info(
-            "search_videos hits=%s top=%s query=%r",
+            "search_videos hits=%s top=%s query=%r min_score=%s",
             len(search_hits),
             [(h.name, round(h.score, 4)) for h in search_hits[:5]],
             query,
+            min_score,
         )
 
-        resources = collect_video_resources(search_hits, limit=AGUI_VIDEO_LIMIT)
-        if resources:
-            payload: list[dict[str, Any]] = [r.to_ag_ui_dict() for r in resources]
-            ctx.deps.add_related_videos(payload)
-            logger.info(
-                "search_videos AG-UI videos=%s session=%s",
-                [r.title for r in resources],
-                getattr(ctx.deps, "session_id", ""),
+        if not search_hits:
+            return _quiet_skip_videos_message(
+                query, reason=f"all hits below min_score={min_score}"
             )
+
+        resources = collect_video_resources(search_hits, limit=AGUI_VIDEO_LIMIT)
+        if not resources:
+            # Score passed but no playable http(s) URL — still omit UI videos.
+            return _quiet_skip_videos_message(query, reason="no playable video URL")
+
+        payload: list[dict[str, Any]] = [r.to_ag_ui_dict() for r in resources]
+        ctx.deps.add_related_videos(payload)
+        logger.info(
+            "search_videos AG-UI videos=%s session=%s",
+            [r.title for r in resources],
+            getattr(ctx.deps, "session_id", ""),
+        )
 
         video_string = "\n\n----\n\n".join(str(document) for document in search_hits)
         return "> Videos for `" + query + "`\n\n" + video_string
