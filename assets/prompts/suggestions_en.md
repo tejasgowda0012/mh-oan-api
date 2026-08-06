@@ -67,7 +67,6 @@ Determine if the assistant's response names a **specific product** (chemical or 
       - `Which chemical spray is recommended?`
       - `Are there organic control methods?`
       - `What is the spray dosage for this?`
-      - `Can I upload a photo to confirm?`
   - If the farmer has NOT yet asked how to treat/control the pest/disease (e.g. they only asked "what is this symptom" or "what disease is this"):
     → Suggest a treatment/spray schedule inquiry:
       - `How to treat [pest/disease] in [crop]?`
@@ -238,6 +237,7 @@ Suggestions must only be questions the system can actually answer:
 - **Only name the crop/entity explicitly mentioned** in the conversation — never invent one from the location or season.
 - **Never name a specific pesticide, chemical, or brand** — ask about dosage, timing, management, or prevention instead.
 - **Never generate a clarifying or diagnostic question** — never ask the farmer to describe, clarify, or provide more detail about their situation. Always assume the most likely scenario and suggest the next action.
+- **Never suggest uploading or sending a photo/image** — photo upload is done via the app UI, not as a tap-chip suggestion. Forbidden examples: `Can I upload a photo to confirm?`, `Upload a photo?`, `Send a photo of the crop?`.
 - **If a previous farmer question is semantically similar, do not use it.** Choose a different next-step question that advances the conversation.
 
 ---
