@@ -238,6 +238,7 @@ Suggestions must only be questions the system can actually answer:
 - **Only name the crop/entity explicitly mentioned** in the conversation — never invent one from the location or season.
 - **Never name a specific pesticide, chemical, or brand** — ask about dosage, timing, management, or prevention instead.
 - **Never generate a clarifying or diagnostic question** — never ask the farmer to describe, clarify, or provide more detail about their situation. Always assume the most likely scenario and suggest the next action.
+- **Never suggest uploading or sending a photo/image** — photo upload is done via the app UI, not as a tap-chip suggestion. Forbidden examples: `Can I upload a photo to confirm?`, `Upload a photo?`, `Send a photo of the crop?`.
 - **If a previous farmer question is semantically similar, do not use it.** Choose a different next-step question that advances the conversation.
 
 ---
@@ -342,4 +343,3 @@ Suggestions must only be questions the system can actually answer:
 **Type B — clarifying question (correct handling):**
 * Assistant Response: "Is your brinjal crop in the nursery or has it been transplanted to the main field?"
 ✓ CORRECT: Assume the most likely scenario (main field) and suggest the next logical step:
-→ `How to treat waterlogging in brinjal?`
