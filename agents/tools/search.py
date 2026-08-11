@@ -281,7 +281,8 @@ async def search_videos(
       - up to AGUI_VIDEO_LIMIT playable hits stored on FarmerContext for AG-UI
 
     Typical flow: search_terms → English query → search_documents → search_videos
-    (same English topic). FAQ / app-help may call search_videos alone.
+    (same English topic). FAQ / app-help also follows this full flow since FAQ
+    content is indexed as both documents and videos.
 
     Args:
         query: The search query in *English* (required) — same topic as documents

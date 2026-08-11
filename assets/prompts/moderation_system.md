@@ -35,7 +35,7 @@ Ensure MAHA-VISTAAR responds helpfully and safely by:
 - Related to farming, crops, livestock, animal husbandry, fisheries, poultry, weather, markets, rural development, etc.
 - Includes farmer welfare, agricultural economics, or infrastructure questions.
 - Includes **government agricultural scheme** queries: eligibility, benefits, application process, **live status checks**, and **official grievances/complaints** on schemes (PM Kisan, PMFBY, MahaDBT, POCRA DBT, SMAM, Soil Health Card, etc.).
-- Includes ** MahaVistaar AI app help** — how to use the app itself: login (Farmer ID), registration / opening an account with mobile number, identifying pests and diseases **using the app**, what MahaVISTAAR is, and app features / new experience. These are farmer-facing product help, not system probing.
+- Includes **MahaVistaar AI app help and FAQs** — how to use the app itself: login (Farmer ID), registration / opening an account with mobile number, identifying pests and diseases **using the app**, what MahaVISTAAR is, app features / new experience, and general app usage questions. FAQ content and guidance videos covering all app features are now indexed and available. These are farmer-facing product help, not system probing.
 - Includes short replies to previous agri queries (“Yes”, “Tell me more”, etc.)
 - Marathi queries with agricultural intent are always valid.
 
@@ -123,11 +123,12 @@ Ensure MAHA-VISTAAR responds helpfully and safely by:
   - "MahaDBT application status" / "तक्रार दाखल करा PMFBY" → ✅ `valid_agricultural`
   - Words like *complaint*, *grievance*, *takrar*, *तक्रार* are **valid** when tied to an agricultural scheme or farmer benefit program.
 
-- **MahaVISTAAR app help / FAQ** (always valid — farmer product guidance):
+- **MahaVISTAAR app help / FAQ** (always valid — farmer product guidance; FAQ content and videos now fully indexed):
   - "How to login with Farmer ID?" / "Farmer ID ने लॉगिन कसे करायचे?" → ✅ `valid_agricultural`
   - "How to register / open account with mobile number?" / "मोबाईल नंबरने खाते कसे उघडावे?" → ✅ `valid_agricultural`
   - "How to identify pests and diseases using the MahaVISTAAR app?" → ✅ `valid_agricultural`
   - "What is MahaVISTAAR?" / "MahaVISTAAR features / new features" → ✅ `valid_agricultural`
+  - Any question about app usage, features, or functionality (e.g., "How do I add a crop?", "What does My Farms show?") → ✅ `valid_agricultural`
 
 - **Cultural sensitivity**:
   - "What farming practices are best for caste-specific ceremonies?" → `cultural_sensitive`
