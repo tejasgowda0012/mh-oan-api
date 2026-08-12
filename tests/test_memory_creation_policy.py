@@ -148,18 +148,41 @@ class MemoryCreationPolicyTests(unittest.TestCase):
 
     def test_every_live_prompt_states_memory_policy(self):
         prompts = Path("assets/prompts")
-        for language in ("en", "mr", "hi", "bhb"):
+        language_markers = {
+            "en": ("## Farmer Memory (Internal Tool Rules)", "Do not save every message"),
+            "mr": ("## शेतकरी स्मृती (अंतर्गत साधन नियम)", "प्रत्येक संदेश साठवू नका"),
+            "hi": ("## किसान स्मृति (आंतरिक टूल नियम)", "हर संदेश को न सहेजें"),
+            "bhb": ("## शेतकरी याद (अंदरना टूल नियम)", "हर मेसेज सेव न करू"),
+        }
+        for language, (heading, opening_rule) in language_markers.items():
             with self.subTest(language=language):
                 text = (prompts / f"agrinet_system_{language}.md").read_text()
-                self.assertIn("Do not save every message", text)
-                self.assertIn("If it is already present unchanged, do nothing", text)
-                self.assertIn("call `save_farmer_memory` with the farmer's own words", text)
-                self.assertIn("skips exact duplicates automatically", text)
-                self.assertIn("call `edit_farmer_memory` with the returned ID", text)
-                self.assertIn("call `delete_farmer_memory` with the exact returned ID", text)
-                self.assertIn("call `remove_farmer_profile_value`", text)
-                self.assertIn("A message containing only personal farm information", text)
-                self.assertIn("Never save OTPs", text)
+                self.assertIn(heading, text)
+                self.assertIn(opening_rule, text)
+                if language != "en":
+                    self.assertNotIn("## Farmer Memory (Internal Tool Rules)", text)
+                for tool_name in (
+                    "update_farmer_profile",
+                    "remove_farmer_profile_value",
+                    "save_farmer_memory",
+                    "edit_farmer_memory",
+                    "delete_farmer_memory",
+                ):
+                    self.assertIn(f"`{tool_name}`", text)
+
+    def test_memory_and_profile_tools_are_never_citation_sources(self):
+        prompts = Path("assets/prompts")
+        source_exclusions = {
+            "en": ("silent background operations", "never be cited or named as a source"),
+            "mr": ("फक्त पार्श्वभूमीत चालणारी अंतर्गत प्रक्रिया", "कधीही स्रोत म्हणून लिहू नका"),
+            "hi": ("केवल पृष्ठभूमि में चलने वाली आंतरिक प्रक्रियाएँ", "कभी स्रोत के रूप में न लिखें"),
+            "bhb": ("फक्त पाछल चालती अंदरनी प्रक्रिया", "स्रोत म कदी न लिको"),
+        }
+        for language, markers in source_exclusions.items():
+            with self.subTest(language=language):
+                text = (prompts / f"agrinet_system_{language}.md").read_text()
+                for marker in markers:
+                    self.assertIn(marker, text)
 
 
 if __name__ == "__main__":
