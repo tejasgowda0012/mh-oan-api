@@ -137,13 +137,13 @@ async def stream_chat_messages(
             lf_set_trace_io(input=query)
 
             # ------------------------------------------------------------------
-            # Bhili: translate query → English before processing
+            # Bhili: translate query bhb → mr before processing (Marathi intermediary)
             # ------------------------------------------------------------------
             is_bhili = source_lang == "bhb"
             if is_bhili:
-                query = await translation_service.translate_text(query, source_lang, "en")
-                logger.info(f"Bhili query translated to English: {query}")
-                target_lang = "en"
+                query = await translation_service.translate_text(query, source_lang, "mr")
+                logger.info(f"Bhili query translated to Marathi: {query}")
+                target_lang = "mr"
 
             deps = FarmerContext(
                 query=query,
@@ -334,18 +334,18 @@ async def _run_agrinet_stream(
 
                 if is_bhili:
                     # Buffer paragraph-by-paragraph so Bhashini receives complete
-                    # sentences, then translate each paragraph before yielding.
+                    # sentences, then translate each paragraph (mr → bhb) before yielding.
                     buffer = ""
                     async for chunk in response_stream.stream_text(delta=True):
                         buffer += chunk
                         while "\n\n" in buffer:
                             paragraph, buffer = buffer.split("\n\n", 1)
-                            translated = await _translate_paragraph(paragraph, "en", "bhb")
+                            translated = await _translate_paragraph(paragraph, "mr", "bhb")
                             full_output += translated + "\n\n"
                             yield translated + "\n\n"
                     # Flush remaining tail (no trailing double-newline)
                     if buffer.strip():
-                        translated_tail = await _translate_paragraph(buffer, "en", "bhb")
+                        translated_tail = await _translate_paragraph(buffer, "mr", "bhb")
                         full_output += translated_tail
                         yield translated_tail
                 else:
