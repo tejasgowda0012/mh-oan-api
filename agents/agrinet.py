@@ -25,11 +25,22 @@ agrinet_agent = Agent(
     model_settings=_AGRINET_MODEL_SETTINGS,
 )
 
-@agrinet_agent.system_prompt(dynamic=True)
-def get_agrinet_system_prompt(ctx: RunContext[FarmerContext]):
-    lang_code = ctx.deps.lang_code or "en"
-    prompt_name = f"agrinet_system_{lang_code}"
+def build_agrinet_system_prompt(lang_code: str | None) -> str:
+    """The agent's full system prompt for one language.
+
+    Shared by the `@system_prompt` hook (used by `/chat`, which passes a
+    `user_prompt`) and by `app/services/agui.py`, which must pass it as run
+    `instructions` instead: the AG-UI adapter supplies the user turn inside
+    `message_history` rather than as a `user_prompt`, so pydantic-ai never
+    builds the new request that would trigger the hook.
+    """
+    prompt_name = f"agrinet_system_{lang_code or 'en'}"
     return get_prompt(prompt_name, context={
         "today_date": get_today_date_str(),
         "crop_season": get_crop_season(),
     })
+
+
+@agrinet_agent.system_prompt(dynamic=True)
+def get_agrinet_system_prompt(ctx: RunContext[FarmerContext]):
+    return build_agrinet_system_prompt(ctx.deps.lang_code)

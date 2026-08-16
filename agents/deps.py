@@ -46,6 +46,72 @@ class FarmerContext(BaseModel):
         default_factory=list,
         description="Structured document resources retrieved this turn, for AG-UI grounding validation.",
     )
+    # Filled by search_videos, read by present_video. Keyed by the short label
+    # ("v1", "v2", …) shown to the model, so presenting a video is a lookup
+    # rather than a second Marqo round trip.
+    video_candidates: Dict[str, Dict[str, Any]] = Field(
+        default_factory=dict,
+        description="Video payloads returned by search_videos this turn, keyed by short id.",
+    )
+    # Populated by present_suggestions for AG-UI follow-up chips.
+    suggested_questions: List[str] = Field(
+        default_factory=list,
+        description="Follow-up questions the agent chose to offer this turn.",
+    )
+
+    def remember_video_candidates(self, videos: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+        """Register search_videos results as presentable candidates.
+
+        Returns the newly assigned {short_id: payload} mapping so the caller can
+        render those ids for the model. Ids continue across repeated searches in
+        one turn, and a video already registered keeps its original id.
+        """
+        assigned: Dict[str, Dict[str, Any]] = {}
+        by_url = {
+            (v.get("url") or v.get("id")): key
+            for key, v in self.video_candidates.items()
+        }
+        for video in videos:
+            url = video.get("url") or video.get("id")
+            existing = by_url.get(url) if url else None
+            if existing:
+                assigned[existing] = self.video_candidates[existing]
+                continue
+            key = f"v{len(self.video_candidates) + 1}"
+            self.video_candidates[key] = video
+            if url:
+                by_url[url] = key
+            assigned[key] = video
+        return assigned
+
+    def find_video_candidate(self, video_id: str) -> Optional[Dict[str, Any]]:
+        """Resolve a short id ("v1"), a raw resource id, or a URL to its payload."""
+        if not video_id:
+            return None
+        wanted = str(video_id).strip()
+        if wanted in self.video_candidates:
+            return self.video_candidates[wanted]
+        lowered = wanted.lower()
+        for payload in self.video_candidates.values():
+            if lowered in {
+                str(payload.get("id", "")).lower(),
+                str(payload.get("url", "")).lower(),
+            }:
+                return payload
+        return None
+
+    def add_suggested_questions(self, questions: List[str]) -> List[str]:
+        """Append unique follow-up questions; returns the ones actually added."""
+        seen = {q.strip().lower() for q in self.suggested_questions}
+        added: List[str] = []
+        for question in questions:
+            cleaned = (question or "").strip()
+            if not cleaned or cleaned.lower() in seen:
+                continue
+            seen.add(cleaned.lower())
+            self.suggested_questions.append(cleaned)
+            added.append(cleaned)
+        return added
 
     def add_related_videos(self, videos: List[Dict[str, Any]]) -> None:
         """Append unique structured videos for AG-UI clients."""
