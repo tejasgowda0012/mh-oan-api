@@ -132,6 +132,96 @@ class AgUiModelInputTests(unittest.TestCase):
             self.assertIn(tool, captured["tools"])
 
 
+class InternalEchoFilterTests(unittest.IsolatedAsyncioTestCase):
+    """Internal tool output must never surface as an answer.
+
+    Reproduces the observed failure: after present_video/present_suggestions
+    returned, the model filled its forced extra turn with
+    " FileNotFound: No videos found for `how to use the app`".
+    """
+
+    @staticmethod
+    async def _feed(events):
+        for event in events:
+            yield event
+
+    async def _run(self, events):
+        from app.services.agui import _drop_internal_echo_messages
+
+        return [e async for e in _drop_internal_echo_messages(self._feed(events))]
+
+    @staticmethod
+    def _message(message_id: str, text: str, chunk: int = 7):
+        from ag_ui.core import (
+            TextMessageContentEvent,
+            TextMessageEndEvent,
+            TextMessageStartEvent,
+        )
+
+        events = [TextMessageStartEvent(message_id=message_id, role="assistant")]
+        events += [
+            TextMessageContentEvent(message_id=message_id, delta=text[i:i + chunk])
+            for i in range(0, len(text), chunk)
+        ]
+        events.append(TextMessageEndEvent(message_id=message_id))
+        return events
+
+    @staticmethod
+    def _text_of(events) -> str:
+        from ag_ui.core import TextMessageContentEvent
+
+        return "".join(e.delta for e in events if isinstance(e, TextMessageContentEvent))
+
+    async def test_drops_the_observed_filenotfound_echo(self):
+        out = await self._run(
+            self._message("m2", " FileNotFound: No videos found for `how to use the app`\n\nWould you like to know more?")
+        )
+        self.assertEqual("", self._text_of(out))
+        self.assertEqual([], out)
+
+    async def test_keeps_a_real_answer_verbatim(self):
+        answer = (
+            "MahaVISTAAR is Maharashtra's AI-powered agricultural advisory platform "
+            "designed to help farmers with crop management, weather and market prices.\n\n"
+            "**Source: MahaVISTAAR App FAQs**"
+        )
+        out = await self._run(self._message("m1", answer))
+        self.assertEqual(answer, self._text_of(out))
+
+    async def test_keeps_the_farmer_facing_no_videos_sentence(self):
+        # Tool string is "No videos found for `q`"; this farmer-facing line is not.
+        answer = "No videos are available for this topic. Would you like written steps instead?"
+        out = await self._run(self._message("m1", answer))
+        self.assertEqual(answer, self._text_of(out))
+
+    async def test_drops_raw_tool_output_echo(self):
+        out = await self._run(
+            self._message("m1", "> Videos for `how to use the app`\n\n**[Login with Farmer ID]**")
+        )
+        self.assertEqual("", self._text_of(out))
+
+    async def test_answer_survives_when_a_junk_message_follows_it(self):
+        answer = "Open the app and enter your mobile number to receive an OTP for verification."
+        events = self._message("m1", answer) + self._message("m2", " FileNotFound: No videos found for `x`")
+        out = await self._run(events)
+        self.assertEqual(answer, self._text_of(out))
+
+    async def test_short_message_below_sniff_window_is_classified(self):
+        out = await self._run(self._message("m1", "ValueError: boom"))
+        self.assertEqual("", self._text_of(out))
+        out = await self._run(self._message("m1", "Spray neem oil."))
+        self.assertEqual("Spray neem oil.", self._text_of(out))
+
+    async def test_non_text_events_pass_through_untouched(self):
+        from ag_ui.core import CustomEvent, RunFinishedEvent
+
+        custom = CustomEvent(name="related_documents", value={"documents": []})
+        finished = RunFinishedEvent(thread_id="t", run_id="r")
+        out = await self._run([custom, *self._message("m1", "Real answer text here."), finished])
+        self.assertIn(custom, out)
+        self.assertIn(finished, out)
+
+
 class AgUiStateHandlingTests(unittest.TestCase):
     def test_state_is_consumed_not_forwarded_to_deps(self):
         """FarmerContext is not a StateHandler dataclass; forwarding state only warns."""

@@ -25,6 +25,7 @@ Langfuse chain span stays open across the whole run — the same reason
 from __future__ import annotations
 
 import os
+import re
 import uuid
 from collections.abc import AsyncIterator
 from typing import Any
@@ -35,6 +36,8 @@ from ag_ui.core import (
     RunErrorEvent,
     RunStartedEvent,
     TextMessageContentEvent,
+    TextMessageEndEvent,
+    TextMessageStartEvent,
     UserMessage,
 )
 from fastapi import BackgroundTasks, Request
@@ -110,6 +113,109 @@ def _rewrite_latest_user_content(run_input, formatted: str) -> None:
         *(run_input.messages or []),
         UserMessage(id=str(uuid.uuid4()), content=formatted),
     ]
+
+
+# Text that is internal tool output, not an answer. After the present_* tools
+# return, the agent loop asks the model for one more turn; a small model
+# sometimes fills it by echoing a tool string or inventing an exception
+# ("FileNotFound: No videos found for `…`") instead of staying silent. The
+# prompts tell it to call the present tools *before* writing, which removes the
+# extra turn — this is the backstop for when it does it anyway.
+#
+# Patterns are deliberately tight and anchored to our own tool strings, so a
+# legitimate answer that merely talks about videos is never dropped. Note the
+# backticks: the tool says "No videos found for `query`" while the farmer-facing
+# line is "No videos are available for this topic."
+_INTERNAL_ECHO_PATTERNS = (
+    re.compile(r"^\s*(FileNotFound(Error)?|ValueError|KeyError|TypeError|AttributeError"
+               r"|IndexError|Exception|Traceback|ModelRetry)\b"),
+    re.compile(r"^\s*No videos found for\s*`"),
+    re.compile(r"^\s*No matching terms found for\s*`"),
+    re.compile(r"^\s*>\s*(Search Results|Videos) for\s*`"),
+    re.compile(r"^\s*Error (searching|fetching|retrieving)\b"),
+    re.compile(r"^\s*No farmer memory available\b"),
+)
+
+# How much of a text message to hold before deciding. Long enough to classify,
+# short enough that the delay is invisible.
+_ECHO_SNIFF_CHARS = 60
+
+
+def _is_internal_echo(text: str) -> bool:
+    return any(pattern.search(text) for pattern in _INTERNAL_ECHO_PATTERNS)
+
+
+async def _drop_internal_echo_messages(
+    stream: AsyncIterator[BaseEvent],
+) -> AsyncIterator[BaseEvent]:
+    """Drop assistant text messages that are really internal tool output.
+
+    Each text message is held for its first ``_ECHO_SNIFF_CHARS`` characters and
+    classified once: junk is dropped whole (START/CONTENT/END), anything else is
+    released and then streamed live with no further buffering.
+    """
+    held_start: BaseEvent | None = None
+    buffer = ""
+    decided = False
+    dropping = False
+
+    def reset() -> None:
+        nonlocal held_start, buffer, decided, dropping
+        held_start, buffer, decided, dropping = None, "", False, False
+
+    async for event in stream:
+        if isinstance(event, TextMessageStartEvent):
+            held_start = event
+            buffer = ""
+            decided = False
+            dropping = False
+            continue
+
+        if isinstance(event, TextMessageContentEvent) and not decided:
+            buffer += event.delta
+            if len(buffer) < _ECHO_SNIFF_CHARS:
+                continue
+            decided = True
+            dropping = _is_internal_echo(buffer)
+            if dropping:
+                logger.warning("Dropped internal tool echo from answer: %r", buffer[:120])
+                continue
+            if held_start is not None:
+                yield held_start
+                held_start = None
+            yield TextMessageContentEvent(message_id=event.message_id, delta=buffer)
+            buffer = ""
+            continue
+
+        if isinstance(event, TextMessageContentEvent):
+            if not dropping:
+                yield event
+            continue
+
+        if isinstance(event, TextMessageEndEvent):
+            # Short message: decide on whatever was buffered.
+            if not decided:
+                decided = True
+                dropping = _is_internal_echo(buffer)
+                if dropping:
+                    logger.warning("Dropped internal tool echo from answer: %r", buffer[:120])
+                elif buffer:
+                    if held_start is not None:
+                        yield held_start
+                        held_start = None
+                    yield TextMessageContentEvent(message_id=event.message_id, delta=buffer)
+            if not dropping and held_start is None:
+                yield event
+            reset()
+            continue
+
+        yield event
+
+    # Stream ended mid-message (client disconnect): flush anything still held.
+    if not decided and buffer and not _is_internal_echo(buffer):
+        if held_start is not None:
+            yield held_start
+        yield TextMessageContentEvent(message_id="", delta=buffer)
 
 
 async def _translate_stream_to_bhili(
@@ -321,6 +427,8 @@ async def handle_agui_request(
                     instructions=build_agrinet_system_prompt(effective_target_lang),
                     on_complete=on_complete,
                 )
+                # Filter before translating: never pay Bhashini for junk text.
+                stream = _drop_internal_echo_messages(stream)
                 if is_bhili:
                     stream = _translate_stream_to_bhili(stream)
 
