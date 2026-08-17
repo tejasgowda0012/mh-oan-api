@@ -32,9 +32,15 @@ MAX_SUGGESTION_CHARS = 90
 async def present_video(ctx: RunContext[FarmerContext], video_id: str) -> str:
     """Attach one video from a previous `search_videos` result to this reply.
 
-    Call this ONLY when a specific video directly answers the farmer's question.
-    A video that is merely on the same broad crop or topic is not good enough —
-    if nothing fits, skip this tool entirely and do not mention videos.
+    Call this when a candidate is genuinely about the same crop and the same
+    general problem area (pest, disease, fertilizer, irrigation, etc.) as the
+    farmer's question — it does not need to name the exact same pest/disease
+    the farmer mentioned. A video covering one specific instance of that
+    general problem (e.g. one particular pest) still counts as a match for a
+    broader question about that same problem; call this tool for it. Only
+    skip this tool when every candidate is a different crop, a genuinely
+    unrelated topic, or a generic intro/promotional video with no real
+    answer in it.
 
     Never invent an id. Use only the `v1` / `v2` / … ids listed in the most
     recent `search_videos` result of this conversation.
