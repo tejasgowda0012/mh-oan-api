@@ -22,9 +22,9 @@ from helpers.utils import get_logger
 
 logger = get_logger(__name__)
 
-# Guard rails for present_suggestions — the chip UI shows one question at a time
-# and truncates long ones, so keep them short and few.
-MAX_SUGGESTIONS = 3
+# Guard rails for present_suggestions — the chip UI shows a single question,
+# so cap to one and keep it short.
+MAX_SUGGESTIONS = 1
 MAX_SUGGESTION_CHARS = 90
 
 
@@ -69,18 +69,19 @@ async def present_video(ctx: RunContext[FarmerContext], video_id: str) -> str:
 
 @observe(name="tool:present_suggestions", as_type="tool")
 async def present_suggestions(ctx: RunContext[FarmerContext], questions: list[str]) -> str:
-    """Offer 1-3 short follow-up questions as tappable chips under your answer.
+    """Offer exactly one short follow-up question as a tappable chip under your answer.
 
-    Call this once, after answering, only when there are genuinely useful next
-    questions this farmer would plausibly ask. Skip it for greetings, declines,
+    Call this once, after answering, only when there is a genuinely useful next
+    question this farmer would plausibly ask. Skip it for greetings, declines,
     or when the answer already closes the topic.
 
-    Write each one the way a farmer would type it: short (4-7 words), concrete,
+    Write it the way a farmer would type it: short (4-7 words), concrete,
     about a farm action, and in the same language as your answer. No "you"/"your",
     no "in your area", nothing the farmer has already asked this session.
 
     Args:
-        questions: The follow-up questions to show, most useful first.
+        questions: The follow-up question to show, as a single-item list. Only
+            the first item is used; extras are discarded.
     """
     cleaned = [q.strip() for q in (questions or []) if q and q.strip()]
     cleaned = [q for q in cleaned if len(q) <= MAX_SUGGESTION_CHARS][:MAX_SUGGESTIONS]
