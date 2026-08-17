@@ -187,3 +187,8 @@ cython_debug/
 .DS_Store
 dump.rdb
 app/auth/jwt_auth.py
+
+
+CLAUDE.md
+AGENTS.md
+*.md

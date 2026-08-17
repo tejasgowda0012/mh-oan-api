@@ -20,6 +20,7 @@ from agents.tools.cross_network import (
     pmkisan_installment_status,
     smam_application_status,
 )
+from agents.tools.present import present_suggestions, present_video
 from agents.tools.memory_tool import (
     delete_farmer_memory,
     edit_farmer_memory,
@@ -100,9 +101,23 @@ TOOLS = [
         require_parameter_descriptions=True,
     ),
 
-    # Search Videos
+    # Search Videos (read-only — returns candidates for present_video)
     Tool(
         search_videos,
+        takes_ctx=True,
+        docstring_format='auto',
+        require_parameter_descriptions=True,
+    ),
+
+    # Presentation-only: agent decides what the UI actually shows
+    Tool(
+        present_video,
+        takes_ctx=True,
+        docstring_format='auto',
+        require_parameter_descriptions=True,
+    ),
+    Tool(
+        present_suggestions,
         takes_ctx=True,
         docstring_format='auto',
         require_parameter_descriptions=True,

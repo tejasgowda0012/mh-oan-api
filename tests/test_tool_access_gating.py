@@ -245,5 +245,76 @@ class AgristackPrecedencePromptTests(unittest.TestCase):
                 self.assertIn(auto_store, text)
 
 
+class PresentToolTests(unittest.IsolatedAsyncioTestCase):
+    """present_video / present_suggestions are the agent's explicit UI decisions."""
+
+    def setUp(self):
+        from agents.deps import FarmerContext
+
+        self.deps = FarmerContext(query="cotton pests", lang_code="en")
+        self.deps.remember_video_candidates(
+            [
+                {"id": "doc-1", "url": "https://youtu.be/aaa", "title": "Cotton Pest Control"},
+                {"id": "doc-2", "url": "https://youtu.be/bbb", "title": "MahaVISTAAR AI App"},
+            ]
+        )
+        self.ctx = SimpleNamespace(deps=self.deps)
+
+    async def test_unknown_id_retries_and_attaches_nothing(self):
+        from pydantic_ai import ModelRetry
+        from agents.tools.present import present_video
+
+        with self.assertRaises(ModelRetry):
+            await present_video(self.ctx, "v99")
+        self.assertEqual([], self.deps.related_videos)
+
+    async def test_present_video_attaches_only_the_chosen_candidate(self):
+        from agents.tools.present import present_video
+
+        result = await present_video(self.ctx, "v1")
+        self.assertIn("Cotton Pest Control", result)
+        self.assertEqual(
+            ["Cotton Pest Control"], [v["title"] for v in self.deps.related_videos]
+        )
+
+    async def test_search_videos_alone_attaches_nothing(self):
+        # remember_video_candidates ran in setUp — candidates exist, but until the
+        # model calls present_video the reply carries no video.
+        self.assertEqual(2, len(self.deps.video_candidates))
+        self.assertEqual([], self.deps.related_videos)
+
+    async def test_present_suggestions_trims_and_dedupes(self):
+        from agents.tools.present import MAX_SUGGESTIONS, present_suggestions
+
+        await present_suggestions(
+            self.ctx,
+            [
+                " Best sowing time for cotton ",
+                "",
+                "x" * 500,
+                "Best sowing time for cotton",
+                "Fertilizer dose next week",
+                "Irrigation schedule for June",
+                "One question too many",
+            ],
+        )
+        self.assertLessEqual(len(self.deps.suggested_questions), MAX_SUGGESTIONS)
+        self.assertEqual(
+            len(set(self.deps.suggested_questions)), len(self.deps.suggested_questions)
+        )
+        self.assertNotIn("", self.deps.suggested_questions)
+
+
+class PresentToolPromptTests(unittest.TestCase):
+    def test_all_languages_describe_both_present_tools(self):
+        from pathlib import Path
+
+        for lang in ("en", "hi", "mr", "bhb"):
+            with self.subTest(language=lang):
+                text = Path(f"assets/prompts/agrinet_system_{lang}.md").read_text()
+                self.assertIn("present_video", text)
+                self.assertIn("present_suggestions", text)
+
+
 if __name__ == "__main__":
     unittest.main()

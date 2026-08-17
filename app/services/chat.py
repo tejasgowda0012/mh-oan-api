@@ -266,8 +266,9 @@ async def _run_moderation(user_message: str, session_id: str):
     lf_update_current_observation(
         output=str(run.output),
         model=MODERATION_MODEL_NAME,
-        request_tokens=usage_data.request_tokens or 0,
-        response_tokens=usage_data.response_tokens or 0,
+        # `request_tokens`/`response_tokens` on RunUsage are deprecated aliases.
+        request_tokens=usage_data.input_tokens or 0,
+        response_tokens=usage_data.output_tokens or 0,
         metadata={},
     )
     return run.output
@@ -360,8 +361,8 @@ async def _run_agrinet_stream(
                 # Usage is only available after the stream context exits.
                 try:
                     usage = response_stream.usage()
-                    request_tokens = usage.request_tokens or 0
-                    response_tokens = usage.response_tokens or 0
+                    request_tokens = usage.input_tokens or 0
+                    response_tokens = usage.output_tokens or 0
                 except Exception:
                     pass  # Usage unavailable — tokens reported as 0
 

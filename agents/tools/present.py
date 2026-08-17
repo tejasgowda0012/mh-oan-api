@@ -1,0 +1,91 @@
+"""Presentation-only tools — the agent's explicit "show this in the UI" calls.
+
+These have no external side effect. Each writes to a ``FarmerContext`` side
+channel and returns the same payload as JSON, so the AG-UI transport surfaces it
+to the client as the tool's ``TOOL_CALL_RESULT`` content with no extra plumbing.
+
+Splitting *find* from *show* is the point: ``search_videos`` returns candidates
+and the model decides, in the same reasoning pass that produced the answer,
+whether any of them is actually worth attaching.
+"""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+
+from langfuse import observe
+from pydantic_ai import ModelRetry, RunContext
+
+from agents.deps import FarmerContext
+from helpers.utils import get_logger
+
+logger = get_logger(__name__)
+
+# Guard rails for present_suggestions — the chip UI shows one question at a time
+# and truncates long ones, so keep them short and few.
+MAX_SUGGESTIONS = 3
+MAX_SUGGESTION_CHARS = 90
+
+
+@observe(name="tool:present_video", as_type="tool")
+async def present_video(ctx: RunContext[FarmerContext], video_id: str) -> str:
+    """Attach one video from a previous `search_videos` result to this reply.
+
+    Call this ONLY when a specific video directly answers the farmer's question.
+    A video that is merely on the same broad crop or topic is not good enough —
+    if nothing fits, skip this tool entirely and do not mention videos.
+
+    Never invent an id. Use only the `v1` / `v2` / … ids listed in the most
+    recent `search_videos` result of this conversation.
+
+    Args:
+        video_id: Short id of the video to show, e.g. "v1", from search_videos.
+    """
+    payload = ctx.deps.find_video_candidate(video_id)
+    if payload is None:
+        known = ", ".join(ctx.deps.video_candidates.keys()) or "none"
+        raise ModelRetry(
+            f"No video with id {video_id!r}. Available ids: {known}. "
+            "Run search_videos first, then pass one of the listed ids — "
+            "or skip present_video if none of them fit."
+        )
+
+    ctx.deps.add_related_videos([payload])
+    logger.info(
+        "present_video id=%s title=%r session=%s",
+        video_id,
+        payload.get("title"),
+        getattr(ctx.deps, "session_id", ""),
+    )
+    return json.dumps({"videos": [payload]}, ensure_ascii=False)
+
+
+@observe(name="tool:present_suggestions", as_type="tool")
+async def present_suggestions(ctx: RunContext[FarmerContext], questions: list[str]) -> str:
+    """Offer 1-3 short follow-up questions as tappable chips under your answer.
+
+    Call this once, after answering, only when there are genuinely useful next
+    questions this farmer would plausibly ask. Skip it for greetings, declines,
+    or when the answer already closes the topic.
+
+    Write each one the way a farmer would type it: short (4-7 words), concrete,
+    about a farm action, and in the same language as your answer. No "you"/"your",
+    no "in your area", nothing the farmer has already asked this session.
+
+    Args:
+        questions: The follow-up questions to show, most useful first.
+    """
+    cleaned = [q.strip() for q in (questions or []) if q and q.strip()]
+    cleaned = [q for q in cleaned if len(q) <= MAX_SUGGESTION_CHARS][:MAX_SUGGESTIONS]
+    if not cleaned:
+        return "No suggestions shown (empty or over-long questions were discarded)."
+
+    added = ctx.deps.add_suggested_questions(cleaned)
+    logger.info(
+        "present_suggestions count=%s session=%s",
+        len(added),
+        getattr(ctx.deps, "session_id", ""),
+    )
+    payload: dict[str, Any] = {"questions": ctx.deps.suggested_questions}
+    return json.dumps(payload, ensure_ascii=False)

@@ -30,6 +30,11 @@ DocumentType = Literal['video', 'document']
 # Max videos attached to AG-UI for inline playback (agent still sees full top_k).
 AGUI_VIDEO_LIMIT = 1
 
+# Max playable videos offered to the model as present_video candidates. Higher
+# than AGUI_VIDEO_LIMIT because attachment is now the model's judgement call —
+# the old limit existed only to cap *forced* attachment.
+VIDEO_CANDIDATE_LIMIT = 3
+
 # Max documents (grouped by doc_id) attached to AG-UI for grounding validation
 # (agent still sees full top_k). Chunk count per document is unbounded (None) so
 # every retrieved chunk for a shown document is visible for grounding validation.
@@ -275,10 +280,15 @@ async def search_videos(
     """
     Semantic search for videos — same Marqo hybrid path as search_documents.
 
+    This tool only *finds* videos; it never shows them. Each playable result is
+    listed with a short id (`v1`, `v2`, …). After reading the results, call
+    `present_video` with one of those ids **only** if that video directly answers
+    the farmer's question. If none of them fit, attach nothing and do not
+    mention videos in the answer.
+
     Differences from search_documents:
       - filter_string is type:video
       - URL dedupe (ingest may split one YouTube into many chunk rows)
-      - up to AGUI_VIDEO_LIMIT playable hits stored on FarmerContext for AG-UI
 
     Typical flow: search_terms → English query → search_documents → search_videos
     (same English topic). FAQ / app-help also follows this full flow since FAQ
@@ -329,17 +339,30 @@ async def search_videos(
             query,
         )
 
-        resources = collect_video_resources(search_hits, limit=AGUI_VIDEO_LIMIT)
-        if resources:
-            payload: list[dict[str, Any]] = [r.to_ag_ui_dict() for r in resources]
-            ctx.deps.add_related_videos(payload)
-            logger.info(
-                "search_videos AG-UI videos=%s session=%s",
-                [r.title for r in resources],
-                getattr(ctx.deps, "session_id", ""),
-            )
+        # Read-only: register candidates for present_video, attach nothing yet.
+        resources = collect_video_resources(search_hits, limit=VIDEO_CANDIDATE_LIMIT)
+        assigned = ctx.deps.remember_video_candidates(
+            [r.to_ag_ui_dict() for r in resources]
+        )
+        logger.info(
+            "search_videos candidates=%s session=%s",
+            list(assigned.keys()),
+            getattr(ctx.deps, "session_id", ""),
+        )
 
         video_string = "\n\n----\n\n".join(str(document) for document in search_hits)
+        if assigned:
+            catalogue = "\n".join(
+                f"- `{key}` — {payload.get('title') or payload.get('url')}"
+                for key, payload in assigned.items()
+            )
+            video_string += (
+                "\n\n----\n\n"
+                "**Playable videos (pass one of these ids to `present_video`):**\n"
+                f"{catalogue}\n\n"
+                "Only call `present_video` if a video above directly answers this "
+                "farmer's question. Otherwise attach nothing and do not mention videos."
+            )
         return "> Videos for `" + query + "`\n\n" + video_string
 
     except Exception as e:
