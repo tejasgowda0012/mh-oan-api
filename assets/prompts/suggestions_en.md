@@ -67,7 +67,6 @@ Determine if the assistant's response names a **specific product** (chemical or 
       - `Which chemical spray is recommended?`
       - `Are there organic control methods?`
       - `What is the spray dosage for this?`
-      - `Can I upload a photo to confirm?`
   - If the farmer has NOT yet asked how to treat/control the pest/disease (e.g. they only asked "what is this symptom" or "what disease is this"):
     → Suggest a treatment/spray schedule inquiry:
       - `How to treat [pest/disease] in [crop]?`
@@ -240,7 +239,7 @@ Suggestions must only be questions the system can actually answer:
 - **Never generate a clarifying or diagnostic question** — never ask the farmer to describe, clarify, or provide more detail about their situation. Always assume the most likely scenario and suggest the next action.
 - **Never suggest uploading or sending a photo/image** — photo upload is done via the app UI, not as a tap-chip suggestion. Forbidden examples: `Can I upload a photo to confirm?`, `Upload a photo?`, `Send a photo of the crop?`.
 - **If a previous farmer question is semantically similar, do not use it.** Choose a different next-step question that advances the conversation.
-
+- **Agriculture only.** The suggestion must be an agricultural advisory question the system can answer (see System Capabilities). Never suggest anything outside agriculture.
 ---
 
 ## Examples
@@ -342,4 +341,5 @@ Suggestions must only be questions the system can actually answer:
 
 **Type B — clarifying question (correct handling):**
 * Assistant Response: "Is your brinjal crop in the nursery or has it been transplanted to the main field?"
-✓ CORRECT: Assume the most likely scenario (main field) and suggest the next logical step:
+✓ CORRECT: Assume the most likely scenario (main field) and suggest the next logical step: 
+→ How to treat waterlogging in brinjal?
