@@ -69,19 +69,11 @@ async def present_video(ctx: RunContext[FarmerContext], video_id: str) -> str:
 
 @observe(name="tool:present_suggestions", as_type="tool")
 async def present_suggestions(ctx: RunContext[FarmerContext], questions: list[str]) -> str:
-    """Offer exactly one short follow-up question as a tappable chip under your answer.
+    """Offer a short follow-up question as a tappable chip under your answer.
 
-    Call this once, after answering, only when there is a genuinely useful next
-    question this farmer would plausibly ask. Skip it for greetings, declines,
-    or when the answer already closes the topic.
-
-    Write it the way a farmer would type it: short (4-7 words), concrete,
-    about a farm action, and in the same language as your answer. No "you"/"your",
-    no "in your area", nothing the farmer has already asked this session.
-
-    Args:
-        questions: The follow-up question to show, as a single-item list. Only
-            the first item is used; extras are discarded.
+    You must call this tool exactly once per message. Follow the specific rules 
+    outlined in your system prompt for what question to suggest based on the scenario.
+    The language of the question must strictly follow your system prompt's instruction.
     """
     cleaned = [q.strip() for q in (questions or []) if q and q.strip()]
     cleaned = [q for q in cleaned if len(q) <= MAX_SUGGESTION_CHARS][:MAX_SUGGESTIONS]
