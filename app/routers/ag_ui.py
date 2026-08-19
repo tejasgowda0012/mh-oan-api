@@ -48,13 +48,13 @@ async def ag_ui_chat_endpoint(
     history = await _get_message_history(session_id)
 
     # Clear stale suggestions cache (same as classic /chat).
-    from app.core.cache import cache
-
-    for lang in ["mr", "en", "hi", "bhb"]:
-        try:
-            await cache.delete(f"suggestions_{session_id}_{lang}")
-        except Exception:
-            pass
+    # from app.core.cache import cache
+    #
+    # for lang in ["mr", "en", "hi", "bhb"]:
+    #     try:
+    #         await cache.delete(f"suggestions_{session_id}_{lang}")
+    #     except Exception:
+    #         pass
 
     # Shared lists filled by stream_chat_messages while the agent runs.
     related_videos: list = []

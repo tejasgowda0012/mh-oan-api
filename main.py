@@ -15,7 +15,7 @@ from app.routers import (
     memories,
     pest_detection,
     profile,
-    suggestions,
+    # suggestions,
     transcribe,
     tts,
     upload,
@@ -93,7 +93,7 @@ app.include_router(chat.router, prefix=settings.api_prefix)
 app.include_router(agui.router, prefix=settings.api_prefix)
 app.include_router(ag_ui.router, prefix=settings.api_prefix)  # deprecated: pre-protocol AG-UI shape
 app.include_router(transcribe.router, prefix=settings.api_prefix)
-app.include_router(suggestions.router, prefix=settings.api_prefix)
+# app.include_router(suggestions.router, prefix=settings.api_prefix)
 app.include_router(tts.router, prefix=settings.api_prefix)
 app.include_router(health.router, prefix=settings.api_prefix)
 app.include_router(upload.router, prefix=settings.api_prefix)

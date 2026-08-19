@@ -56,7 +56,7 @@ from app.services.chat import (
 )
 from app.services.identity import resolve_memory_user_id
 from app.services.memory_context import preload_farmer_profile
-from app.tasks.suggestions import create_suggestions
+# from app.tasks.suggestions import create_suggestions
 from app.utils import (
     _get_message_history,
     filter_thinking_from_history,
@@ -407,13 +407,13 @@ async def handle_agui_request(
                         )
 
                     # Legacy fallback: only when the agent offered no chips itself.
-                    if not deps.suggested_questions and moderation_data.category == "valid_agricultural":
-                        try:
-                            background_tasks.add_task(
-                                create_suggestions, session_id, target_lang, user_id, effective_query
-                            )
-                        except Exception:
-                            logger.error("AG-UI suggestions task failed", exc_info=True)
+                    # if not deps.suggested_questions and moderation_data.category == "valid_agricultural":
+                    #     try:
+                    #         background_tasks.add_task(
+                    #             create_suggestions, session_id, target_lang, user_id, effective_query
+                    #         )
+                    #     except Exception:
+                    #         logger.error("AG-UI suggestions task failed", exc_info=True)
 
                 # The system prompt MUST be passed as run instructions here.
                 # `@agrinet_agent.system_prompt` only fires when pydantic-ai

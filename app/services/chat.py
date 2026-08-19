@@ -30,7 +30,7 @@ from app.utils import (
     format_message_pairs,
     filter_thinking_from_history,
 )
-from app.tasks.suggestions import create_suggestions
+# from app.tasks.suggestions import create_suggestions
 from app.services.identity import resolve_memory_user_id
 from app.services.memory_context import preload_farmer_profile
 from agents.deps import FarmerContext
@@ -231,14 +231,14 @@ async def stream_chat_messages(
                         session_id,
                     )
 
-                if moderation_data.category == "valid_agricultural":
-                    logger.info(f"Triggering suggestions generation for session {session_id}")
-                    try:
-                        background_tasks.add_task(
-                            create_suggestions, session_id, target_lang, user_id, query
-                        )
-                    except Exception as e:
-                        logger.error(f"Error adding suggestions task: {str(e)}")
+                # if moderation_data.category == "valid_agricultural":
+                #     logger.info(f"Triggering suggestions generation for session {session_id}")
+                #     try:
+                #         background_tasks.add_task(
+                #             create_suggestions, session_id, target_lang, user_id, query
+                #         )
+                #     except Exception as e:
+                #         logger.error(f"Error adding suggestions task: {str(e)}")
             finally:
                 # Set trace + root span output here (same OTel context as input).
                 # update_current_trace from nested async generators does not persist.

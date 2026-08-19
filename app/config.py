@@ -70,7 +70,7 @@ class Settings(BaseSettings):
 
     # Cache Configuration
     default_cache_ttl: int = 60 * 60 * 24  # 24 hours
-    suggestions_cache_ttl: int = 60 * 30    # 30 minutes
+    # suggestions_cache_ttl: int = 60 * 30    # 30 minutes
     pest_upload_cache_ttl: int = 60 * 60 * 24  # 24 hours
 
     # MinIO (S3-compatible) storage for pest images. Configure lifecycle
