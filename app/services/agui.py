@@ -349,6 +349,7 @@ async def handle_agui_request(
                     deps = FarmerContext(
                         query=effective_query,
                         lang_code=effective_target_lang,
+                        display_lang=target_lang,
                         session_id=session_id,
                         farmer_id=user_claims.get("farmer_id"),
                         unique_id=user_claims.get("unique_id"),

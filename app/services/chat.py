@@ -148,6 +148,7 @@ async def stream_chat_messages(
             deps = FarmerContext(
                 query=query,
                 lang_code=target_lang,
+                display_lang=source_lang if is_bhili else target_lang,
                 session_id=session_id,
                 farmer_id=user_claims.get("farmer_id"),
                 unique_id=user_claims.get("unique_id"),

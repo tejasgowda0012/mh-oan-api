@@ -20,6 +20,7 @@ class FarmerContext(BaseModel):
     """
     query: str = Field(description="The user's question.")
     lang_code: str = Field(description="The language code of the user's question.", default='mr')
+    display_lang: str = Field(default="", description="The actual target language to display to the user.")
     session_id: str = Field(default="", description="Conversation session id.")
     moderation_str: Optional[str] = Field(default=None, description="The moderation result of the user's question.")
     farmer_id: Optional[str] = Field(default=None, description="The farmer ID of the user.")
