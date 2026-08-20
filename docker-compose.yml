@@ -13,24 +13,7 @@ services:
     restart: unless-stopped
     networks:
       - svanetwork
-    depends_on:
-      - redis-stack
 
-  redis-stack:
-    image: redis/redis-stack-server:latest
-    container_name: sva_redis
-    ports:
-      - "6379:6379"
-    networks:
-      - svanetwork
-
-  qdrant:
-    image: qdrant/qdrant:latest
-    container_name: sva_qdrant
-    ports:
-      - "6333:6333"
-    networks:
-      - svanetwork
 
 networks:
   svanetwork:
