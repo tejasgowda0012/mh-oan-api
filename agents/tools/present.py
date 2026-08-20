@@ -72,9 +72,10 @@ async def present_video(ctx: RunContext[FarmerContext], video_id: str) -> str:
 async def present_suggestions(ctx: RunContext[FarmerContext], questions: list[str]) -> str:
     """Offer a short follow-up question as a tappable chip under your answer.
 
+    CRITICAL: You MUST call this tool BEFORE generating your conversational text response, even for short greetings or out-of-scope messages. If you start writing your response first, you will miss the window to call this tool and break the application.
     You must call this tool exactly once per message. Follow the specific rules 
     outlined in your system prompt for what question to suggest based on the scenario.
-    The string inside the questions array MUST be in the exact same language and script as your response (e.g., if you answered in Bhili/Marathi/Hindi, the suggestion MUST be in Bhili/Marathi/Hindi in Devanagari script). NEVER output English suggestions unless the user explicitly requested English.
+    The string inside the questions array MUST be in the exact same language and script as your response. If your text response is in English, the suggestion MUST be in English. If your text response is in Bhili/Marathi/Hindi, the suggestion MUST be in Bhili/Marathi/Hindi in Devanagari script.
 
     Args:
         questions: The follow-up question to show, as a single-item list. Only
