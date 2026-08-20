@@ -19,13 +19,14 @@ from pydantic_ai import ModelRetry, RunContext
 
 from agents.deps import FarmerContext
 from helpers.utils import get_logger
+from helpers.translation import translation_service
 
 logger = get_logger(__name__)
 
 # Guard rails for present_suggestions — the chip UI shows a single question,
 # so cap to one and keep it short.
 MAX_SUGGESTIONS = 1
-MAX_SUGGESTION_CHARS = 90
+MAX_SUGGESTION_CHARS = 150
 
 
 @observe(name="tool:present_video", as_type="tool")
@@ -73,10 +74,23 @@ async def present_suggestions(ctx: RunContext[FarmerContext], questions: list[st
 
     You must call this tool exactly once per message. Follow the specific rules 
     outlined in your system prompt for what question to suggest based on the scenario.
-    The language of the question must strictly follow your system prompt's instruction.
+    The string inside the questions array MUST be in the exact same language and script as your response (e.g., if you answered in Bhili/Marathi/Hindi, the suggestion MUST be in Bhili/Marathi/Hindi in Devanagari script). NEVER output English suggestions unless the user explicitly requested English.
+
+    Args:
+        questions: The follow-up question to show, as a single-item list. Only
+            the first item is used; extras are discarded.
     """
     cleaned = [q.strip() for q in (questions or []) if q and q.strip()]
     cleaned = [q for q in cleaned if len(q) <= MAX_SUGGESTION_CHARS][:MAX_SUGGESTIONS]
+
+    if getattr(ctx.deps, "display_lang", "") == "bhb" and cleaned:
+        translated_questions = []
+        for q in cleaned:
+            # translate from LLM's working language back to Bhili
+            translated = await translation_service.translate_text(q, ctx.deps.lang_code, "bhb")
+            translated_questions.append(translated)
+        cleaned = translated_questions
+
     if not cleaned:
         return "No suggestions shown (empty or over-long questions were discarded)."
 
