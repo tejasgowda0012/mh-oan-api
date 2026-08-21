@@ -70,17 +70,24 @@ async def present_video(ctx: RunContext[FarmerContext], video_id: str) -> str:
 
 @observe(name="tool:present_suggestions", as_type="tool")
 async def present_suggestions(ctx: RunContext[FarmerContext], questions: list[str]) -> str:
-    """Offer a short follow-up question as a tappable chip under your answer.
+    """Offer exactly one short follow-up question as a tappable chip under your answer.
 
-    CRITICAL: You MUST call this tool BEFORE generating your conversational text response, even for short greetings or out-of-scope messages. If you start writing your response first, you will miss the window to call this tool and break the application.
-    You must call this tool exactly once per message. Follow the specific rules 
-    outlined in your system prompt for what question to suggest based on the scenario.
-    The string inside the questions array MUST be in the exact same language and script as your response. If your text response is in English, the suggestion MUST be in English. If your text response is in Bhili/Marathi/Hindi, the suggestion MUST be in Bhili/Marathi/Hindi in Devanagari script.
+    Call this in your VERY FIRST step/turn for every message, before or alongside any other tools (like search_terms or fetch_agristack_data). Do not wait for search results to generate a suggestion.
+    CRITICAL: You MUST call this tool on EVERY turn, even for greetings, declined/out-of-scope queries, or if other tools fail.
+    The chip topic must differ from the follow-up question at the end of your text — never duplicate.
+    Try to suggest a fresh topic based on the user's initial query. For greetings or out-of-scope queries, suggest a general agricultural question (e.g., "What is the weather forecast?").
+
+    Write it the way a farmer would type it: short (4-7 words), concrete,
+    about a farm action, and in the same language as your answer. No "you"/"your",
+    no "in your area".
 
     Args:
         questions: The follow-up question to show, as a single-item list. Only
             the first item is used; extras are discarded.
     """
+    if ctx.deps.suggested_questions:
+        return "Suggestion already added. Ignoring."
+
     cleaned = [q.strip() for q in (questions or []) if q and q.strip()]
     cleaned = [q for q in cleaned if len(q) <= MAX_SUGGESTION_CHARS][:MAX_SUGGESTIONS]
 
