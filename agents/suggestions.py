@@ -1,15 +1,20 @@
 from pydantic_ai import Agent, RunContext
+from pydantic import BaseModel
 from helpers.utils import get_prompt, get_today_date_str, get_crop_season
 from agents.models import AGRINET_MODEL
 from agents.deps import FarmerContext
 from dotenv import load_dotenv
 load_dotenv()
 
+class SuggestionOutput(BaseModel):
+    question: str
+
+
 suggestions_agent = Agent(
     name="Suggestions Agent",
     model=AGRINET_MODEL,
     instrument=True,
-    output_type=str,
+    output_type=SuggestionOutput,
     deps_type=FarmerContext,
     retries=3,
     end_strategy="exhaustive",

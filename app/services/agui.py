@@ -36,6 +36,7 @@ from ag_ui.core import (
     RunErrorEvent,
     RunStartedEvent,
     TextMessageContentEvent,
+    ToolCallResultEvent,
     TextMessageEndEvent,
     TextMessageStartEvent,
     UserMessage,
@@ -47,6 +48,9 @@ from starlette.responses import Response
 
 from agents.agrinet import agrinet_agent, build_agrinet_system_prompt
 from agents.deps import FarmerContext
+from agents.suggestions import suggestions_agent
+from app.services.suggestion_history import get_past_suggestions, add_to_blacklist
+
 from app.services.chat import (
     CHAT_CHAIN_SPAN_NAME,
     CHAT_TRACE_NAME,
@@ -407,14 +411,84 @@ async def handle_agui_request(
                             value={"documents": deps.related_documents},
                         )
 
-                    # Legacy fallback: only when the agent offered no chips itself.
-                    # if not deps.suggested_questions and moderation_data.category == "valid_agricultural":
-                    #     try:
-                    #         background_tasks.add_task(
-                    #             create_suggestions, session_id, target_lang, user_id, effective_query
-                    #         )
-                    #     except Exception:
-                    #         logger.error("AG-UI suggestions task failed", exc_info=True)
+                    try:
+                        # Extract assistant text
+                        assistant_text = full_output
+                        
+                        # 1. Get complete session blacklist from Redis
+                        blacklist = await get_past_suggestions(session_id)
+                        
+                        # 2. Extract the assistant's text follow-up question (last question mark sentence)
+                        questions_in_text = re.findall(r'[^.!?\n]+\?', assistant_text)
+                        assistant_followup = questions_in_text[-1].strip() if questions_in_text else None
+                        
+                        if assistant_followup:
+                            blacklist.add(assistant_followup)
+                            
+                        # 3. Add current user query to blacklist dynamically for this turn
+                        blacklist.add(effective_query)
+                        
+                        # 4. Build strict context
+                        context_str = f"**Current User Query:** {effective_query}\n\n**Assistant Response:** {assistant_text}"
+                        
+                        if assistant_followup:
+                            context_str += f"\n\n**THE ASSISTANT JUST ASKED THE USER:** \"{assistant_followup}\"\n"
+                            context_str += "CRITICAL: You MUST NOT suggest a question that means the same thing as the assistant's question. However, you MUST STAY ON THE SAME TOPIC (e.g. if the topic is weather, suggest a different weather question)."
+
+                        past_items = blacklist - {assistant_followup} if assistant_followup else blacklist
+                        if past_items:
+                            context_str += "\n\n**ALSO DO NOT REPEAT THESE PAST TOPICS:**\n"
+                            for item in past_items:
+                                context_str += f"- {item}\n"
+                        
+                        logger.info("Running suggestions_agent with context: %s", context_str)
+                        
+                        def is_duplicate(c: str, b_list: set) -> bool:
+                            import re
+                            c_norm = re.sub(r'[^\w\s]', '', c.lower()).strip()
+                            if not c_norm: return True
+                            for item in b_list:
+                                i_norm = re.sub(r'[^\w\s]', '', item.lower()).strip()
+                                if c_norm in i_norm or i_norm in c_norm:
+                                    return True
+                            return False
+
+                        max_retries = 3
+                        chip = None
+                        
+                        for attempt in range(max_retries):
+                            sugg_res = await suggestions_agent.run(
+                                context_str,
+                                deps=deps
+                            )
+                            temp_chip = sugg_res.output.question
+                            
+                            if not is_duplicate(temp_chip, blacklist):
+                                chip = temp_chip
+                                break
+                            else:
+                                logger.warning("suggestions_agent generated duplicate chip on attempt %d: %s", attempt+1, temp_chip)
+                                context_str += f"\n\n[SYSTEM: Your last generation '{temp_chip}' was a DUPLICATE of the blacklist. Please suggest a DIFFERENT question, but STAY ON THE SAME TOPIC.]"
+
+                        if chip:
+                            logger.info("suggestions_agent successfully generated unique chip: %s", chip)
+                            
+                            if is_bhili:
+                                chip = await translation_service.translate_text(chip, "en", "bhb")
+                                logger.info("suggestions_agent translated chip to bhili: %s", chip)
+                            
+                            # 5. Persist to Redis for future turns
+                            await add_to_blacklist(session_id, effective_query)
+                            await add_to_blacklist(session_id, chip)
+                            if assistant_followup:
+                                await add_to_blacklist(session_id, assistant_followup)
+                                
+                            yield CustomEvent(
+                                name="suggestions",
+                                value={"questions": [chip]}
+                            )
+                    except Exception as e:
+                        logger.error("AG-UI suggestions_agent failed: %s", str(e), exc_info=True)
 
                 # The system prompt MUST be passed as run instructions here.
                 # `@agrinet_agent.system_prompt` only fires when pydantic-ai

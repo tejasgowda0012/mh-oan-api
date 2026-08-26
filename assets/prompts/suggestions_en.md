@@ -346,3 +346,5 @@ Suggestions must only be questions the system can actually answer:
 * Assistant Response: "Is your brinjal crop in the nursery or has it been transplanted to the main field?"
 ✓ CORRECT: Assume the most likely scenario (main field) and suggest the next logical step:
 → `How to treat waterlogging in brinjal?`
+- **Healthy Crop Image:** If the Assistant Response says the crop image is HEALTHY (no pests/diseases), DO NOT suggest disease prevention or treatment. Suggest general care like fertilizer or irrigation instead.
+- **Out of Scope/Greetings:** If the Current User Query is a greeting or out of scope, suggest a general agricultural question like "What is the weather forecast?".
